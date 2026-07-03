@@ -834,7 +834,7 @@ function setupBboxDrawing() {
       // 1回目のクリック: 始点を確定（描画はまだ行わない）
       startLngLat = e.lngLat;
       const btn = document.getElementById('bv-draw-btn');
-      if (btn) btn.textContent = '対角のもう一点をクリック';
+      if (btn) btn.textContent = '2点目クリック';
     } else {
       // 2回目のクリック: 矩形を確定し、このタイミングで初めて描画する
       const { bbox, geojson } = bboxPolygon(startLngLat, e.lngLat);
@@ -923,7 +923,7 @@ function buildBvaluePanel() {
     bvalueState.drawing = !bvalueState.drawing;
     const btn = document.getElementById('bv-draw-btn');
     btn.classList.toggle('btn-accent', bvalueState.drawing);
-    btn.textContent = bvalueState.drawing ? '1点目をクリック' : '領域を選択';
+    btn.textContent = bvalueState.drawing ? '1点目クリック' : '領域を選択';
     if (bvalueState._onDrawModeChanged) bvalueState._onDrawModeChanged(bvalueState.drawing);
   });
   // Escキーで選択中の矩形描画をキャンセル
