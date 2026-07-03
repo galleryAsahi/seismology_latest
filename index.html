@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>震析 SHIN-SEKI | 地震学解析ツール</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-0:#050608;
+  --bg-1:#0b0d11;
+  --glass-fill: rgba(255,255,255,0.055);
+  --glass-fill-strong: rgba(255,255,255,0.09);
+  --glass-border: rgba(255,255,255,0.11);
+  --glass-border-strong: rgba(255,255,255,0.18);
+  --text-0:#f5f6f8;
+  --text-1:#a9adb8;
+  --text-2:#6b6f7a;
+  --accent:#ff9f43;
+  --accent-2:#4fc3f7;
+  --accent-mag:#ff5470;
+  --danger:#ff4d4f;
+  --safe:#39d98a;
+  --radius-lg:22px;
+  --radius-md:14px;
+  --radius-sm:9px;
+  /* フォントは Noto Sans JP に完全統一する。
+     以前は --font-jp（日本語UI）と --font-mono（数値・日時等の等幅フォント）
+     の2系統に分かれ、見た目の統一感が無かったため1本化した。
+     数値の桁揃えは等幅フォントではなく font-variant-numeric: tabular-nums
+     （.font-num クラス）で担保する。 */
+  --font-base: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+/* 数値・日時など桁揃えしたい箇所に付与する。等幅フォントの代わりに
+   tabular-nums で数字幅だけを揃える（フォント自体はNoto Sans JPのまま）。 */
+.font-num{ font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+html,body{
+  height:100%;
+  margin:0;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(255,159,67,0.07), transparent 45%),
+    radial-gradient(circle at 85% 92%, rgba(79,195,247,0.06), transparent 50%),
+    var(--bg-0);
+  color:var(--text-0);
+  font-family: var(--font-base);
+  overflow:hidden;
+}
+#app{position:relative; width:100vw; height:100vh; height:100dvh;}
+
+/* ===== Views =====
+   注意: .view はフローティングパネル（操作UI）だけを保持する。
+   地図（#map-shared）は #app 直下に固定で置いたままにし、.view の中には
+   一切移動させない。DOM移動（appendChild）はWebGLキャンバスにとって
+   コンテキストの再アタッチに相当し、ブラウザ・GPU次第では一瞬フレームが
+   失われて「再描画」に見えることがあるため、そもそも動かさない方針にする。 */
+.view{
+  position:absolute; inset:0;
+  visibility:hidden;
+  pointer-events:none;
+}
+.view.active{visibility:visible; pointer-events:auto;}
+
+/* ===== Glass panel base ===== */
+.glass-panel{
+  background:var(--glass-fill);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  border:1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* ===== Bottom-left vertical tab rail (Liquid Glass) ===== */
+.tabbar{
+  position:absolute;
+  bottom:18px; left:18px;
+  z-index:60;
+  display:flex; flex-direction:column; gap:4px;
+  padding:6px;
+  border-radius:20px;
+  background:rgba(20,22,28,0.55);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border:1px solid var(--glass-border-strong);
+  box-shadow:0 10px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.tab-btn{
+  display:flex; flex-direction:row; align-items:center; gap:8px;
+  padding:9px 10px;
+  border-radius:14px;
+  border:none;
+  background:transparent;
+  color:var(--text-2);
+  font-family:var(--font-base);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  transition: color .25s ease, background .25s ease, transform .2s ease, padding .2s ease;
+  -webkit-user-select:none; user-select:none;
+  white-space:nowrap;
+  overflow:hidden;
+}
+.tab-btn svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.7; transition:transform .3s ease; flex-shrink:0;}
+.tab-btn .tab-label{
+  max-width:70px;
+  transition: max-width .25s ease, opacity .2s ease;
+  opacity:1;
+}
+.tab-btn.active{
+  color:var(--text-0);
+  background:var(--glass-fill-strong);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 10px rgba(0,0,0,0.25);
+}
+.tab-btn.active svg{transform:scale(1.05);}
+.tab-btn:active{transform:scale(0.96);}
+
+/* 画面が狭い場合はアイコンのみに縮小し、右上の占有スペースを抑える */
+@media (max-width: 640px){
+  .tabbar{ bottom:14px; left:14px; padding:5px; }
+  .tab-btn{ padding:9px; }
+  .tab-btn .tab-label{ max-width:0; opacity:0; }
+}
+
+
+/* ===== Map =====
+   共有地図コンテナ。#app 直下に固定で配置し、タブ切替時も一切DOM移動しない
+   （appendChildによる再親付けはWebGLキャンバスのコンテキスト再アタッチに
+   相当し、環境によって一瞬フレームが失われ「再描画」に見えるため廃止）。
+   表示するレイヤーの出し分けだけで震央分布・b値解析の切替を行う。
+   震源球ビュー（view-mech）がactiveなときは、mech-scroll側に不透明な
+   背景色とz-indexを与えて地図を覆い隠す。 */
+.map-container{position:absolute; inset:0; z-index:1;}
+
+/* ===== Floating panels ===== */
+.floating-panel{
+  position:absolute;
+  z-index:40;
+  padding:16px;
+}
+.panel-title{
+  /* text-transform:uppercase を指定していたが、「b値解析」「Aki's MLE」の
+     ように日本語見出しに半角英字が混じるケースで、その英字部分だけ
+     意図せず大文字化されてしまう（例: 「b値」が「B値」に見える）副作用が
+     あったため削除した。 */
+  font-size:11px; font-weight:700; letter-spacing:0.08em;
+  color:var(--text-2);
+  margin:0 0 10px 0;
+  display:flex; align-items:center; gap:6px;
+}
+.panel-title .bar{width:3px; height:12px; background:var(--accent); border-radius:2px;}
+
+/* form controls */
+label.field-label{
+  font-size:11px; color:var(--text-2); display:block; margin-bottom:4px; letter-spacing:0.02em;
+}
+input[type="number"], select{
+  width:100%;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius-sm);
+  color:var(--text-0);
+  padding:8px 10px;
+  font-family:var(--font-base);
+  font-variant-numeric: tabular-nums;
+  font-size:12.5px;
+  outline:none;
+  transition:border-color .2s;
+}
+input[type="number"]:focus, select:focus{
+  border-color:var(--accent);
+}
+
+/* ===== 日付フィールド（気象庁の震源検索と同じ方式） =====
+   以前は <input type="date"> を透明化して上に YYYY/MM/DD 表示を
+   重ねる方式だったが、WebKitのフォーカス中サブフィールドが透明化を
+   無視して素の文字色で見えてしまう不具合があった。
+   ブラウザのロケール依存・実装差異を避けるため、年/月/日をそれぞれ
+   独立したテキストセグメントとして自前で描画・入力させる方式
+   （気象庁の震源検索条件設定と同様の方式）に切り替える。
+   実際の値は隣接する <input type="hidden"> に "YYYY-MM-DD" 形式で
+   保持し、既存コードの .value 読み取り箇所と互換性を保つ。 */
+.date-field{
+  display:flex;
+  align-items:center;
+  gap:3px;
+  width:100%;
+  height:38px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius-sm);
+  padding:0 10px;
+  transition:border-color .2s;
+}
+.date-field:focus-within{
+  border-color:var(--accent);
+}
+.date-seg{
+  box-sizing:border-box;
+  height:100%;
+  background:transparent;
+  border:none;
+  outline:none;
+  color:var(--text-0);
+  font-family:var(--font-base);
+  font-variant-numeric: tabular-nums;
+  font-size:13.5px;
+  line-height:normal;
+  text-align:center;
+  padding:0;
+  margin:0;
+  vertical-align:middle;
+  caret-color:var(--accent);
+  transition:color .12s ease;
+}
+.date-seg::selection{
+  background:rgba(255,255,255,0.18);
+  color:var(--text-0);
+}
+.date-seg.seg-y{ width:4.2ch; }
+.date-seg.seg-m, .date-seg.seg-d{ width:2.2ch; }
+.date-sep{
+  display:inline-flex;
+  align-items:center;
+  height:100%;
+  color:var(--text-2);
+  font-family:var(--font-base);
+  font-size:13.5px;
+  line-height:normal;
+  user-select:none;
+}
+.date-field-cal-btn{
+  margin-left:auto;
+  display:flex; align-items:center; justify-content:center;
+  width:20px; height:20px;
+  background:transparent; border:none; padding:0;
+  cursor:pointer;
+  opacity:0.55;
+  transition:opacity .15s;
+  position:relative;
+}
+.date-field-cal-btn:hover{ opacity:0.9; }
+.date-field-cal-btn svg{ width:15px; height:15px; stroke:var(--text-0); fill:none; stroke-width:1.6; }
+/* ネイティブの <input type="date"> をカレンダーボタンの真上に重ねて
+   透明化し、クリック時だけピッカー起動用として使う（値の表示はしない）。 */
+.date-field-cal-btn input[type="date"]{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  opacity:0; cursor:pointer;
+  border:none; padding:0; margin:0;
+  background:transparent;
+  font-size:12.5px;
+}
+
+/* <select> のドロップダウンリスト（<option>）はOSネイティブのUIで
+   描画され、多くの環境で背景が白固定になる。select自体はダークテーマの
+   半透明背景だが、option側にも明示的に暗い背景・明るい文字色を指定して
+   おかないと、開いたリストが白背景に白文字（実質不可視）になってしまう。 */
+select option{
+  background:#1a1c22;
+  color:var(--text-0);
+}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:9px 16px;
+  border-radius:var(--radius-sm);
+  border:1px solid var(--glass-border-strong);
+  background:var(--glass-fill-strong);
+  color:var(--text-0);
+  font-family:var(--font-base);
+  font-size:12.5px; font-weight:600;
+  cursor:pointer;
+  transition:transform .15s ease, background .2s ease, box-shadow .2s ease;
+}
+.btn:hover{background:rgba(255,255,255,0.14);}
+.btn:active{transform:scale(0.97);}
+.btn-accent{
+  background:linear-gradient(135deg, rgba(255,159,67,0.9), rgba(255,120,67,0.85));
+  border-color:rgba(255,159,67,0.5);
+  color:#1a0f00;
+}
+.btn-accent:hover{background:linear-gradient(135deg, rgba(255,175,90,0.95), rgba(255,135,80,0.9));}
+.btn:disabled{opacity:0.4; cursor:not-allowed; transform:none;}
+
+.btn-sm{padding:6px 11px; font-size:11px; border-radius:8px;}
+
+.row{display:flex; gap:8px;}
+.row > *{flex:1;}
+
+.divider{height:1px; background:var(--glass-border); margin:12px 0;}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px; height:6px;}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15); border-radius:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* Loading spinner */
+.spinner{
+  width:16px; height:16px;
+  border:2px solid rgba(255,255,255,0.15);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.status-text{font-size:11px; color:var(--text-2); display:flex; align-items:center; gap:6px;}
+
+/* Toast */
+.toast{
+  position:absolute; top:16px; left:50%; transform:translateX(-50%) translateY(-10px);
+  z-index:90;
+  padding:10px 16px;
+  border-radius:12px;
+  background:rgba(30,20,20,0.75);
+  border:1px solid rgba(255,80,80,0.35);
+  backdrop-filter:blur(20px);
+  color:#ffdada;
+  font-size:12.5px;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .3s ease, transform .3s ease;
+  max-width:90vw;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+/* Custom scrollable panel content */
+.scroll-area{max-height:calc(100vh - 200px); overflow-y:auto;}
+
+/* Legend */
+.legend-row{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-1); margin:3px 0;}
+.legend-swatch{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
+
+/* ===== MapLibre ポップアップ（ダークガラス調に上書き） ===== */
+.maplibregl-popup-content{
+  background:rgba(18,20,25,0.92);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border:1px solid var(--glass-border-strong);
+  border-radius:12px;
+  box-shadow:0 8px 28px rgba(0,0,0,0.45);
+  padding:12px 14px;
+  color:var(--text-0);
+}
+.maplibregl-popup-tip{
+  border-top-color:rgba(18,20,25,0.92) !important;
+  border-bottom-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-close-button{
+  color:var(--text-1);
+  font-size:16px;
+  padding:2px 6px;
+}
+.maplibregl-popup-close-button:hover{
+  color:var(--text-0);
+  background:rgba(255,255,255,0.08);
+}
+
+@media (max-width: 640px){
+  .floating-panel.desktop-only{display:none;}
+}
+
+/* ===== 震源球ビュー: 2カラムレイアウト（左=リスト / 右=詳細） =====
+   リスト・詳細それぞれを独立した縦スクロール領域にする
+   （マウスカーソルが乗っている側だけスクロールできるようにするため）。
+   外側の#mech-scroll自体はスクロールさせず、高さいっぱいの器としてのみ使う。 */
+.mech-layout{
+  display:flex;
+  gap:16px;
+  max-width:1100px;
+  height:100%;
+  margin:0 auto;
+  align-items:stretch;
+}
+.mech-list-col{
+  flex:0 0 360px;
+  min-width:0;
+  height:100%;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.mech-detail-col{
+  flex:1 1 auto;
+  min-width:0;
+  height:100%;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.mech-item{
+  cursor:pointer;
+  transition: background .18s ease, border-color .18s ease;
+}
+.mech-item:hover{
+  background:rgba(255,255,255,0.07) !important;
+}
+.mech-item.selected{
+  background:rgba(255,159,67,0.10) !important;
+  border-color:rgba(255,159,67,0.45) !important;
+}
+.mech-detail-placeholder{
+  display:flex; align-items:center; justify-content:center;
+  min-height:260px;
+  color:var(--text-2);
+  font-size:12.5px;
+  text-align:center;
+  padding:24px;
+}
+@media (max-width: 860px){
+  .mech-layout{ flex-direction:column; height:auto; }
+  .mech-list-col{ flex:1 1 auto; width:100%; height:auto; overflow-y:visible; }
+  .mech-detail-col{ width:100%; height:auto; overflow-y:visible; }
+  #mech-scroll{ overflow-y:auto !important; padding:16px 16px 100px 16px !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="toast" class="toast"></div>
+
+  <!-- ===== 共有地図コンテナ =====
+       震央分布／b値解析の両ビューで1つのMapLibreインスタンスを共有する。
+       #app 直下に固定配置し、タブ切替時もDOM移動は一切行わない。
+       レイヤーのvisibility切替のみで表示内容を出し分ける。 -->
+  <div class="map-container" id="map-shared"></div>
+
+  <!-- ===== VIEW: 震央分布 (Epicenter Map) ===== -->
+  <div class="view active" id="view-epicenter"></div>
+
+  <!-- ===== VIEW: b値解析 (b-value analysis) ===== -->
+  <div class="view" id="view-bvalue"></div>
+
+  <!-- ===== VIEW: 震源球 (Focal mechanism) ===== -->
+  <div class="view" id="view-mech">
+    <div class="mech-scroll" id="mech-scroll" style="position:absolute; inset:0; overflow:hidden; padding:16px 16px 16px 130px; z-index:40; background:var(--bg-0);"></div>
+  </div>
+
+  <!-- ===== Tab bar (top-right, vertical) ===== -->
+  <div class="tabbar">
+    <button class="tab-btn active" data-view="view-epicenter">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="2.5"/><path d="M12 21s7-6.4 7-12a7 7 0 10-14 0c0 5.6 7 12 7 12z"/></svg>
+      <span class="tab-label">震央分布</span>
+    </button>
+    <button class="tab-btn" data-view="view-bvalue">
+      <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
+      <span class="tab-label">b値解析</span>
+    </button>
+    <button class="tab-btn" data-view="view-mech">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>
+      <span class="tab-label">震源球</span>
+    </button>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
