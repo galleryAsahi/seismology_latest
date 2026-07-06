@@ -787,6 +787,26 @@ function parseTimeRobust(raw) {
   const s = String(raw).trim();
   if (!s) return null;
 
+  // JMAの一部エンドポイント（hypoなど）は "YYYY/MM/DD.HH:MM:SS.ss" という独特の書式を使う。
+  // 例: "2026/07/01.21:08:28.68"
+  //   - 日付区切りは "/"
+  //   - 日付と時刻の区切りが "T" でも半角スペースでもなく "." (ピリオド)
+  //   - 秒の小数部も "." 区切りで、ミリ秒ではなく百分の1秒（2桁）
+  // Chrome(V8)のDateパーサはこれを緩く解釈できてしまうが、Safari/WebKitでは
+  // Invalid Dateになる。タイムゾーン情報は無いのでJST（気象庁データの慣習）とみなす。
+  const mJmaDot = /^(\d{4})\/(\d{2})\/(\d{2})\.(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/.exec(s);
+  if (mJmaDot) {
+    const [, y, mo, d, h, mi, sec, frac] = mJmaDot;
+    // frac は "68" のような百分の1秒表記のことが多いため、桁数に応じてミリ秒に変換する
+    let fracMs = 0;
+    if (frac) {
+      fracMs = Math.round(Number(`0.${frac}`) * 1000);
+    }
+    const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec))
+      - 9 * 60 * 60 * 1000;
+    return utcMs + fracMs;
+  }
+
   // "YYYY-MM-DD(T|space)HH:mm:ss(.sss)?(Z|+09:00|+0900)?" 形式を明示的にパースする。
   // タイムゾーンが無い場合はJST（+09:00）とみなす。JMAのデータは基本的に日本時間のため。
   const m = /^(\d{4})[-/](\d{2})[-/](\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?\s*(Z|[+-]\d{2}:?\d{2})?$/.exec(s);
