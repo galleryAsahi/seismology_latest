@@ -968,6 +968,10 @@ function featuresToGeoJSON(feats) {
         // サポートしておらず、null を渡すとプロパティキー自体が消えることがある。
         // 「時刻不明」を表すセンチネル値として -1 を使い、必ず数値プロパティとして渡す。
         time: f.time != null ? f.time : -1,
+        // 診断用：パース前の生の時刻文字列。time が -1（パース失敗）の場合に
+        // ポップアップ側で表示し、iOS実機のみで原因を特定できるようにする。
+        // GeoJSONプロパティは文字列も許容されるためnullを避け空文字にフォールバック。
+        timeRawDebug: f.timeRaw != null ? String(f.timeRaw) : '',
         maxInt: f.maxInt,
         color: magColor(f.mag),
         radius: magRadius(f.mag)
@@ -1063,33 +1067,35 @@ async function loadPlateBoundaryLayer(plateDataPromise) {
 //   （GeoJSONのnullプロパティはMapLibreが未サポートで、キーごと消えることがあるため）。
 // ・iOS Safariでは Intl/toLocaleString が端末設定次第で例外を投げたり空文字を返す
 //   ことがあるため、try-catchで確実にフォールバックする。
-// ・それでも失敗した場合は「時刻取得エラー」とだけ表示するのではなく、生の値と型を
-//   薄い文字で併記する。これにより、Macの開発者ツールが使えない環境でも、
-//   実機の画面を見るだけで原因（何が来ているか）を特定できるようにしている。
-function formatPopupTime(rawTimeProp) {
+// ・それでも失敗した場合は「時刻取得エラー」とだけ表示するのではなく、
+//   パース前の生の時刻文字列（timeRawDebug）を併記する。これにより、
+//   Macの開発者ツールが使えない環境でも、実機の画面を見るだけで
+//   「JMAのAPIが実際にどんな時刻文字列を返しているか」を特定できるようにしている。
+function formatPopupTime(rawTimeProp, rawTimeDebugStr) {
   const t = Number(rawTimeProp);
 
   if (rawTimeProp == null || isNaN(t) || t < 0) {
     // -1（センチネル値）、未定義、非数値のいずれか＝時刻を特定できなかったケース
-    return `<span style="color:var(--text-2);">時刻不明</span>` + debugTimeHint(rawTimeProp);
+    return `<span style="color:var(--text-2);">時刻不明</span>` + debugTimeHint(rawTimeDebugStr);
   }
 
   try {
     const formatted = new Date(t).toLocaleString('ja-JP');
     if (!formatted || formatted === 'Invalid Date') {
-      return `<span style="color:var(--text-2);">時刻の表示に失敗</span>` + debugTimeHint(rawTimeProp);
+      return `<span style="color:var(--text-2);">時刻の表示に失敗</span>` + debugTimeHint(rawTimeDebugStr);
     }
     return formatted;
   } catch (e) {
     console.error('時刻フォーマットに失敗しました:', e);
-    return `<span style="color:var(--text-2);">時刻の表示に失敗</span>` + debugTimeHint(rawTimeProp);
+    return `<span style="color:var(--text-2);">時刻の表示に失敗</span>` + debugTimeHint(rawTimeDebugStr);
   }
 }
 
-// 診断用：時刻がうまく表示できなかった場合にのみ、生の値・型を小さく併記する。
-// 普段の利用では気にならないよう控えめな見た目にしてある。
-function debugTimeHint(rawTimeProp) {
-  return `<div style="font-size:9.5px; color:var(--text-2); opacity:0.7; margin-top:2px;">(raw: ${JSON.stringify(rawTimeProp)} / type: ${typeof rawTimeProp})</div>`;
+// 診断用：時刻がうまく表示できなかった場合にのみ、JMA側から実際に来た
+// パース前の生文字列を小さく併記する。普段の利用では気にならないよう控えめな見た目。
+function debugTimeHint(rawTimeDebugStr) {
+  const shown = rawTimeDebugStr ? JSON.stringify(rawTimeDebugStr) : '(空/未取得)';
+  return `<div style="font-size:9.5px; color:var(--text-2); opacity:0.7; margin-top:2px;">生データ: ${shown}</div>`;
 }
 
 function initSharedMap() {
@@ -1133,7 +1139,7 @@ function initSharedMap() {
         <div class="font-num" style="font-family:var(--font-base); font-size:12px; line-height:1.6;">
           <div style="font-weight:700; font-size:13px; margin-bottom:4px;">${p.place || '不明'}</div>
           M ${p.mag != null ? p.mag.toFixed(1) : '—'} / 深さ ${p.depth != null ? Math.round(p.depth) + 'km' : '—'}<br>
-          ${formatPopupTime(p.time)}
+          ${formatPopupTime(p.time, p.timeRawDebug)}
         </div>`;
       new maplibregl.Popup({ closeButton: true })
         .setLngLat(coords)
