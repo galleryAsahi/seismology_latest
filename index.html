@@ -11,8 +11,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg-0:#050608;
-  --bg-1:#0b0d11;
+  --bg-0:#0d1017;
+  --bg-1:#161b24;
   --glass-fill: rgba(255,255,255,0.055);
   --glass-fill-strong: rgba(255,255,255,0.09);
   --glass-border: rgba(255,255,255,0.11);
@@ -28,16 +28,9 @@
   --radius-lg:22px;
   --radius-md:14px;
   --radius-sm:9px;
-  /* フォントは Noto Sans JP に完全統一する。
-     以前は --font-jp（日本語UI）と --font-mono（数値・日時等の等幅フォント）
-     の2系統に分かれ、見た目の統一感が無かったため1本化した。
-     数値の桁揃えは等幅フォントではなく font-variant-numeric: tabular-nums
-     （.font-num クラス）で担保する。 */
   --font-base: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-/* 数値・日時など桁揃えしたい箇所に付与する。等幅フォントの代わりに
-   tabular-nums で数字幅だけを揃える（フォント自体はNoto Sans JPのまま）。 */
 .font-num{ font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 html,body{
   height:100%;
@@ -52,12 +45,6 @@ html,body{
 }
 #app{position:relative; width:100vw; height:100vh; height:100dvh;}
 
-/* ===== Views =====
-   注意: .view はフローティングパネル（操作UI）だけを保持する。
-   地図（#map-shared）は #app 直下に固定で置いたままにし、.view の中には
-   一切移動させない。DOM移動（appendChild）はWebGLキャンバスにとって
-   コンテキストの再アタッチに相当し、ブラウザ・GPU次第では一瞬フレームが
-   失われて「再描画」に見えることがあるため、そもそも動かさない方針にする。 */
 .view{
   position:absolute; inset:0;
   visibility:hidden;
@@ -65,7 +52,6 @@ html,body{
 }
 .view.active{visibility:visible; pointer-events:auto;}
 
-/* ===== Glass panel base ===== */
 .glass-panel{
   background:var(--glass-fill);
   backdrop-filter: blur(28px) saturate(170%);
@@ -75,7 +61,6 @@ html,body{
   box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-/* ===== Bottom-left vertical tab rail (Liquid Glass) ===== */
 .tabbar{
   position:absolute;
   bottom:18px; left:18px;
@@ -119,34 +104,29 @@ html,body{
 .tab-btn.active svg{transform:scale(1.05);}
 .tab-btn:active{transform:scale(0.96);}
 
-/* 画面が狭い場合はアイコンのみに縮小し、右上の占有スペースを抑える */
 @media (max-width: 640px){
   .tabbar{ bottom:14px; left:14px; padding:5px; }
   .tab-btn{ padding:9px; }
   .tab-btn .tab-label{ max-width:0; opacity:0; }
 }
 
-
-/* ===== Map =====
-   共有地図コンテナ。#app 直下に固定で配置し、タブ切替時も一切DOM移動しない
-   （appendChildによる再親付けはWebGLキャンバスのコンテキスト再アタッチに
-   相当し、環境によって一瞬フレームが失われ「再描画」に見えるため廃止）。
-   表示するレイヤーの出し分けだけで震央分布・b値解析の切替を行う。
-   震源球ビュー（view-mech）がactiveなときは、mech-scroll側に不透明な
-   背景色とz-indexを与えて地図を覆い隠す。 */
 .map-container{position:absolute; inset:0; z-index:1;}
 
-/* ===== Floating panels ===== */
 .floating-panel{
   position:absolute;
   z-index:40;
   padding:16px;
 }
+.floating-panel.glass-panel{
+  background:#0d0e12;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  border:1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.floating-panel.glass-panel .field-label{ color:rgba(255,255,255,0.6); }
+.floating-panel.glass-panel .panel-title{ color:rgba(255,255,255,0.75); }
 .panel-title{
-  /* text-transform:uppercase を指定していたが、「b値解析」「Aki's MLE」の
-     ように日本語見出しに半角英字が混じるケースで、その英字部分だけ
-     意図せず大文字化されてしまう（例: 「b値」が「B値」に見える）副作用が
-     あったため削除した。 */
   font-size:11px; font-weight:700; letter-spacing:0.08em;
   color:var(--text-2);
   margin:0 0 10px 0;
@@ -154,7 +134,6 @@ html,body{
 }
 .panel-title .bar{width:3px; height:12px; background:var(--accent); border-radius:2px;}
 
-/* form controls */
 label.field-label{
   font-size:11px; color:var(--text-2); display:block; margin-bottom:4px; letter-spacing:0.02em;
 }
@@ -175,26 +154,18 @@ input[type="number"]:focus, select:focus{
   border-color:var(--accent);
 }
 
-/* ===== 日付フィールド（気象庁の震源検索と同じ方式） =====
-   以前は <input type="date"> を透明化して上に YYYY/MM/DD 表示を
-   重ねる方式だったが、WebKitのフォーカス中サブフィールドが透明化を
-   無視して素の文字色で見えてしまう不具合があった。
-   ブラウザのロケール依存・実装差異を避けるため、年/月/日をそれぞれ
-   独立したテキストセグメントとして自前で描画・入力させる方式
-   （気象庁の震源検索条件設定と同様の方式）に切り替える。
-   実際の値は隣接する <input type="hidden"> に "YYYY-MM-DD" 形式で
-   保持し、既存コードの .value 読み取り箇所と互換性を保つ。 */
 .date-field{
   display:flex;
   align-items:center;
   gap:3px;
   width:100%;
   height:38px;
-  background:rgba(255,255,255,0.05);
-  border:1px solid var(--glass-border);
+  background:#0a0b0e;
+  border:1px solid rgba(255,255,255,0.16);
   border-radius:var(--radius-sm);
   padding:0 10px;
   transition:border-color .2s;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
 }
 .date-field:focus-within{
   border-color:var(--accent);
@@ -205,10 +176,11 @@ input[type="number"]:focus, select:focus{
   background:transparent;
   border:none;
   outline:none;
-  color:var(--text-0);
+  color:#ffffff;
   font-family:var(--font-base);
   font-variant-numeric: tabular-nums;
   font-size:13.5px;
+  font-weight:600;
   line-height:normal;
   text-align:center;
   padding:0;
@@ -218,8 +190,8 @@ input[type="number"]:focus, select:focus{
   transition:color .12s ease;
 }
 .date-seg::selection{
-  background:rgba(255,255,255,0.18);
-  color:var(--text-0);
+  background:rgba(255,255,255,0.28);
+  color:#ffffff;
 }
 .date-seg.seg-y{ width:4.2ch; }
 .date-seg.seg-m, .date-seg.seg-d{ width:2.2ch; }
@@ -227,7 +199,7 @@ input[type="number"]:focus, select:focus{
   display:inline-flex;
   align-items:center;
   height:100%;
-  color:var(--text-2);
+  color:rgba(255,255,255,0.55);
   font-family:var(--font-base);
   font-size:13.5px;
   line-height:normal;
@@ -239,14 +211,12 @@ input[type="number"]:focus, select:focus{
   width:20px; height:20px;
   background:transparent; border:none; padding:0;
   cursor:pointer;
-  opacity:0.55;
+  opacity:0.7;
   transition:opacity .15s;
   position:relative;
 }
-.date-field-cal-btn:hover{ opacity:0.9; }
-.date-field-cal-btn svg{ width:15px; height:15px; stroke:var(--text-0); fill:none; stroke-width:1.6; }
-/* ネイティブの <input type="date"> をカレンダーボタンの真上に重ねて
-   透明化し、クリック時だけピッカー起動用として使う（値の表示はしない）。 */
+.date-field-cal-btn:hover{ opacity:1; }
+.date-field-cal-btn svg{ width:15px; height:15px; stroke:#ffffff; fill:none; stroke-width:1.6; }
 .date-field-cal-btn input[type="date"]{
   position:absolute; inset:0;
   width:100%; height:100%;
@@ -256,10 +226,6 @@ input[type="number"]:focus, select:focus{
   font-size:12.5px;
 }
 
-/* <select> のドロップダウンリスト（<option>）はOSネイティブのUIで
-   描画され、多くの環境で背景が白固定になる。select自体はダークテーマの
-   半透明背景だが、option側にも明示的に暗い背景・明るい文字色を指定して
-   おかないと、開いたリストが白背景に白文字（実質不可視）になってしまう。 */
 select option{
   background:#1a1c22;
   color:var(--text-0);
@@ -294,12 +260,10 @@ select option{
 
 .divider{height:1px; background:var(--glass-border); margin:12px 0;}
 
-/* scrollbar */
 ::-webkit-scrollbar{width:6px; height:6px;}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15); border-radius:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 
-/* Loading spinner */
 .spinner{
   width:16px; height:16px;
   border:2px solid rgba(255,255,255,0.15);
@@ -311,7 +275,6 @@ select option{
 
 .status-text{font-size:11px; color:var(--text-2); display:flex; align-items:center; gap:6px;}
 
-/* Toast */
 .toast{
   position:absolute; top:16px; left:50%; transform:translateX(-50%) translateY(-10px);
   z-index:90;
@@ -329,14 +292,11 @@ select option{
 }
 .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 
-/* Custom scrollable panel content */
 .scroll-area{max-height:calc(100vh - 200px); overflow-y:auto;}
 
-/* Legend */
 .legend-row{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-1); margin:3px 0;}
 .legend-swatch{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
 
-/* ===== MapLibre ポップアップ（ダークガラス調に上書き） ===== */
 .maplibregl-popup-content{
   background:rgba(18,20,25,0.92);
   backdrop-filter: blur(20px) saturate(160%);
@@ -365,10 +325,81 @@ select option{
   .floating-panel.desktop-only{display:none;}
 }
 
-/* ===== 震源球ビュー: 2カラムレイアウト（左=リスト / 右=詳細） =====
-   リスト・詳細それぞれを独立した縦スクロール領域にする
-   （マウスカーソルが乗っている側だけスクロールできるようにするため）。
-   外側の#mech-scroll自体はスクロールさせず、高さいっぱいの器としてのみ使う。 */
+.floating-panel.mobile-stacked{
+  position:absolute !important;
+  left:10px !important;
+  right:auto !important;
+  width:200px !important;
+  max-width:62vw !important;
+  box-sizing:border-box;
+  padding:11px 12px !important;
+  border-radius:16px !important;
+}
+
+/* b値解析結果パネルをモバイルでは右上に配置 */
+.floating-panel.mobile-stacked#bv-result-panel {
+  left: auto !important;
+  right: 10px !important;
+  width: 190px !important;
+}
+
+.floating-panel.mobile-stacked .panel-title{
+  font-size:10px !important;
+  margin-bottom:7px !important;
+}
+.floating-panel.mobile-stacked label.field-label{
+  font-size:9.5px !important;
+  margin-bottom:3px !important;
+}
+.floating-panel.mobile-stacked .date-field{
+  height:30px !important;
+  gap:2px !important;
+  padding:0 8px !important;
+}
+.floating-panel.mobile-stacked .date-seg,
+.floating-panel.mobile-stacked .date-sep{
+  font-size:12px !important;
+}
+.floating-panel.mobile-stacked .date-seg.seg-y{ width:4.4ch !important; }
+.floating-panel.mobile-stacked .date-seg.seg-m,
+.floating-panel.mobile-stacked .date-seg.seg-d{ width:2.4ch !important; }
+.floating-panel.mobile-stacked input[type="number"],
+.floating-panel.mobile-stacked select{
+  padding:6px 8px !important;
+  font-size:11px !important;
+}
+.floating-panel.mobile-stacked .btn{
+  padding:7px 8px !important;
+  font-size:11px !important;
+}
+.floating-panel.mobile-stacked .btn-sm{
+  padding:6px 8px !important;
+  font-size:10px !important;
+}
+.floating-panel.mobile-stacked .status-text{
+  font-size:9.5px !important;
+}
+.floating-panel.mobile-stacked #bv-result{
+  font-size:10.5px !important;
+  line-height:1.55 !important;
+}
+.floating-panel.mobile-stacked .row{
+  flex-direction:column !important;
+  gap:6px !important;
+}
+.floating-panel.mobile-stacked #bv-result div[style*="font-size:26px"]{
+  font-size:20px !important;
+}
+.floating-panel.mobile-stacked .legend-row{
+  font-size:10px !important;
+  margin:2px 0 !important;
+}
+.floating-panel.mobile-stacked > div[style*="height:6px"],
+.floating-panel.mobile-stacked > div[style*="height:8px"]{ height:5px !important; }
+.floating-panel.mobile-stacked > div[style*="height:10px"],
+.floating-panel.mobile-stacked > div[style*="height:12px"],
+.floating-panel.mobile-stacked > div[style*="height:14px"]{ height:7px !important; }
+
 .mech-layout{
   display:flex;
   gap:16px;
@@ -420,27 +451,15 @@ select option{
 </head>
 <body>
 <div id="app">
-
   <div id="toast" class="toast"></div>
-
-  <!-- ===== 共有地図コンテナ =====
-       震央分布／b値解析の両ビューで1つのMapLibreインスタンスを共有する。
-       #app 直下に固定配置し、タブ切替時もDOM移動は一切行わない。
-       レイヤーのvisibility切替のみで表示内容を出し分ける。 -->
   <div class="map-container" id="map-shared"></div>
-
-  <!-- ===== VIEW: 震央分布 (Epicenter Map) ===== -->
+  <div id="shared-date-panel-root"></div>
   <div class="view active" id="view-epicenter"></div>
-
-  <!-- ===== VIEW: b値解析 (b-value analysis) ===== -->
   <div class="view" id="view-bvalue"></div>
-
-  <!-- ===== VIEW: 震源球 (Focal mechanism) ===== -->
   <div class="view" id="view-mech">
     <div class="mech-scroll" id="mech-scroll" style="position:absolute; inset:0; overflow:hidden; padding:16px 16px 16px 130px; z-index:40; background:var(--bg-0);"></div>
   </div>
 
-  <!-- ===== Tab bar (top-right, vertical) ===== -->
   <div class="tabbar">
     <button class="tab-btn active" data-view="view-epicenter">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="2.5"/><path d="M12 21s7-6.4 7-12a7 7 0 10-14 0c0 5.6 7 12 7 12z"/></svg>
@@ -455,9 +474,1868 @@ select option{
       <span class="tab-label">震源球</span>
     </button>
   </div>
-
 </div>
 
-<script src="app.js"></script>
+<script>
+'use strict';
+
+const DARK_STYLE = {
+  version: 8,
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+  sources: {},
+  layers: [
+    { id: 'bg', type: 'background', paint: { 'background-color': '#1a2230' } }
+  ]
+};
+
+const GEOJSON_WORLD_URL = 'world.geojson';
+const GEOJSON_PREF_URL = 'prefectures.geojson';
+const GEOJSON_PLATE_BOUNDARIES_URL = 'plate-boundaries.geojson';
+
+const JAPAN_CENTER = [138.5, 37.0];
+
+let epinameGrid = null;
+let epinameNames = null;
+let epinameSortedLatKeys = null;
+let epinameLoadPromise = null;
+
+function parseEpinameData() {
+  const rawNames = window.EPINAME_LIST;
+  const rawGrid = window.EPINAME_GRID_RAW;
+  if (!rawNames || !rawGrid) throw new Error('EPINAME data not found');
+
+  epinameNames = rawNames;
+  epinameGrid = new Map();
+
+  const latRows = rawGrid.split(';');
+  for (const row of latRows) {
+    if (!row) continue;
+    const colonIdx = row.indexOf(':');
+    const latKey = parseInt(row.slice(0, colonIdx), 36);
+    const entriesStr = row.slice(colonIdx + 1);
+    const entries = [];
+    let prevLon = 0;
+    if (entriesStr) {
+      for (const pair of entriesStr.split(',')) {
+        const [diffStr, idxStr] = pair.split('_');
+        const diff = parseInt(diffStr, 36);
+        const idx = parseInt(idxStr, 36);
+        prevLon += diff;
+        entries.push([prevLon, idx]);
+      }
+    }
+    epinameGrid.set(latKey, entries);
+  }
+  epinameSortedLatKeys = Array.from(epinameGrid.keys()).sort((a, b) => a - b);
+}
+
+async function loadEpinameData() {
+  if (epinameLoadPromise) return epinameLoadPromise;
+  epinameLoadPromise = (async () => {
+    try {
+      if (!window.EPINAME_LIST || !window.EPINAME_GRID_RAW) {
+        await loadScriptOnce('epiname_data.js');
+      }
+      parseEpinameData();
+    } catch (e) {
+      console.error('震央地名データの読み込みに失敗しました:', e);
+      toast('震央地名データの読み込みに失敗しました');
+    }
+  })();
+  return epinameLoadPromise;
+}
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-epiname-src="${src}"]`);
+    if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); return; }
+    const el = document.createElement('script');
+    el.src = src;
+    el.dataset.epinameSrc = src;
+    el.onload = resolve;
+    el.onerror = reject;
+    document.head.appendChild(el);
+  });
+}
+
+function nearestIndexSorted(sortedArr, value) {
+  let lo = 0, hi = sortedArr.length - 1;
+  if (hi < 0) return -1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedArr[mid] < value) lo = mid + 1; else hi = mid;
+  }
+  if (lo > 0) {
+    const prev = sortedArr[lo - 1];
+    const cur = sortedArr[lo];
+    if (Math.abs(prev - value) <= Math.abs(cur - value)) return lo - 1;
+  }
+  return lo;
+}
+
+function lookupEpicenterName(lon, lat) {
+  if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return null;
+  if (!epinameGrid || !epinameSortedLatKeys || !epinameNames) return null;
+  if (epinameSortedLatKeys.length === 0) return null;
+
+  const EPS = 1e-6;
+  const latKeyF = lat * 60 + EPS;
+  const latIdx = nearestIndexSorted(epinameSortedLatKeys, latKeyF);
+  if (latIdx < 0) return null;
+  const latKey = epinameSortedLatKeys[latIdx];
+  const entries = epinameGrid.get(latKey);
+  if (!entries || entries.length === 0) return null;
+
+  const lonKeyF = lon * 60 + EPS;
+  let idx = -1;
+  let loI = 0, hiI = entries.length - 1;
+  while (loI <= hiI) {
+    const mid = (loI + hiI) >> 1;
+    if (entries[mid][0] <= lonKeyF) { idx = mid; loI = mid + 1; } else { hiI = mid - 1; }
+  }
+  if (idx < 0) idx = 0;
+  const nameIdx = entries[idx][1];
+  return epinameNames[nameIdx] || null;
+}
+
+function toast(msg, ms = 4200) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function createDateFieldHTML(id, isoValue) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoValue || '');
+  const y = m ? m[1] : '';
+  const mo = m ? m[2] : '';
+  const d = m ? m[3] : '';
+  const todayIso = defaultDateStr(0);
+  return `
+    <div class="date-field" data-date-field-id="${id}">
+      <input type="hidden" id="${id}" value="${isoValue || ''}">
+      <input class="date-seg seg-y" type="text" inputmode="numeric" maxlength="4" placeholder="年" data-seg="y" value="${y}">
+      <span class="date-sep">/</span>
+      <input class="date-seg seg-m" type="text" inputmode="numeric" maxlength="2" placeholder="月" data-seg="m" value="${mo}">
+      <span class="date-sep">/</span>
+      <input class="date-seg seg-d" type="text" inputmode="numeric" maxlength="2" placeholder="日" data-seg="d" value="${d}">
+      <button type="button" class="date-field-cal-btn" title="カレンダーから選択">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <input type="date" tabindex="-1" aria-hidden="true" value="${isoValue || ''}" max="${todayIso}">
+      </button>
+    </div>`;
+}
+
+function bindDateField(id, onChange) {
+  const root = document.querySelector(`.date-field[data-date-field-id="${id}"]`);
+  if (!root) return;
+  const hidden = document.getElementById(id);
+  const segY = root.querySelector('[data-seg="y"]');
+  const segM = root.querySelector('[data-seg="m"]');
+  const segD = root.querySelector('[data-seg="d"]');
+  const calInput = root.querySelector('.date-field-cal-btn input[type="date"]');
+
+  function currentIso() {
+    const y = segY.value.trim();
+    const mo = segM.value.trim();
+    const d = segD.value.trim();
+    if (y.length === 4 && mo.length >= 1 && d.length >= 1) {
+      const isoStr = `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
+      const dt = new Date(isoStr + 'T00:00:00');
+      if (!isNaN(dt) && dt.getFullYear() === Number(y) && dt.getMonth() + 1 === Number(mo) && dt.getDate() === Number(d)) {
+        return isoStr;
+      }
+    }
+    return '';
+  }
+
+  const todayIso = defaultDateStr(0);
+  function clampToToday(iso) {
+    if (iso && iso > todayIso) return todayIso;
+    return iso;
+  }
+
+  function commit() {
+    let iso = currentIso();
+    const clamped = clampToToday(iso);
+    if (clamped !== iso && clamped) {
+      iso = clamped;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+      segY.value = m[1]; segM.value = m[2]; segD.value = m[3];
+    }
+    hidden.value = iso;
+    if (calInput) calInput.value = iso;
+    if (onChange) onChange(iso);
+  }
+
+  function wireSegment(el, maxLen, next) {
+    el.addEventListener('input', () => {
+      const digits = el.value.replace(/\D/g, '').slice(0, maxLen);
+      el.value = digits;
+      if (digits.length >= maxLen && next) next.focus();
+      commit();
+    });
+    el.addEventListener('blur', () => {
+      if (el.dataset.seg !== 'y' && el.value.length === 1) {
+        el.value = pad2(Number(el.value));
+      }
+      commit();
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && el.selectionStart === 0 && el.selectionEnd === 0) {
+        const prev = el === segD ? segM : (el === segM ? segY : null);
+        if (prev) { prev.focus(); prev.setSelectionRange(prev.value.length, prev.value.length); }
+      }
+    });
+    el.addEventListener('focus', () => { el.select(); });
+  }
+  wireSegment(segY, 4, segM);
+  wireSegment(segM, 2, segD);
+  wireSegment(segD, 2, null);
+
+  if (calInput) {
+    calInput.addEventListener('change', () => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(calInput.value || '');
+      if (m) {
+        segY.value = m[1]; segM.value = m[2]; segD.value = m[3];
+        commit();
+      }
+    });
+  }
+}
+
+function getDateFieldValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+
+const tabButtons = document.querySelectorAll('.tab-btn');
+const views = document.querySelectorAll('.view');
+
+const VIEW_LAYERS = {
+  'view-epicenter': ['quake-circles', 'plate-boundaries-line'],
+  'view-bvalue': ['quake-circles', 'plate-boundaries-line', 'bv-bbox-fill', 'bv-bbox-line']
+};
+const ALL_SHARED_LAYERS = [...new Set(Object.values(VIEW_LAYERS).flat())];
+
+function applyLayerVisibilityFor(viewId) {
+  if (!Object.prototype.hasOwnProperty.call(VIEW_LAYERS, viewId)) return;
+  if (!sharedMap || !sharedMap.isStyleLoaded()) return;
+  const visibleSet = new Set(VIEW_LAYERS[viewId] || []);
+  for (const layerId of ALL_SHARED_LAYERS) {
+    if (!sharedMap.getLayer(layerId)) continue;
+    sharedMap.setLayoutProperty(layerId, 'visibility', visibleSet.has(layerId) ? 'visible' : 'none');
+  }
+}
+
+function activateView(targetId) {
+  tabButtons.forEach(b => b.classList.toggle('active', b.dataset.view === targetId));
+  views.forEach(v => v.classList.toggle('active', v.id === targetId));
+
+  const sharedDatePanelRoot = document.getElementById('shared-date-panel-root');
+  if (sharedDatePanelRoot) {
+    sharedDatePanelRoot.style.display =
+      (targetId === 'view-epicenter' || targetId === 'view-bvalue') ? '' : 'none';
+  }
+
+  applyLayerVisibilityFor(targetId);
+  applyResponsivePanelLayout();
+}
+
+tabButtons.forEach(btn => {
+  btn.addEventListener('click', () => activateView(btn.dataset.view));
+});
+
+function hypoUrlFor(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = pad2(dateObj.getMonth() + 1);
+  const d = pad2(dateObj.getDate());
+  return `https://www.jma.go.jp/bosai/hypo/data/${y}/${m}/hypo${y}${m}${d}.geojson`;
+}
+
+function dateRange(startStr, endStr) {
+  const out = [];
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  if (isNaN(start) || isNaN(end) || start > end) return out;
+  const cur = new Date(start);
+  while (cur <= end) {
+    out.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+function pickProp(props, keys, fallback = null) {
+  for (const k of keys) {
+    if (props[k] !== undefined && props[k] !== null) return props[k];
+  }
+  return fallback;
+}
+
+function normalizeFeature(feature) {
+  const p = feature.properties || {};
+  const coords = (feature.geometry && feature.geometry.coordinates) || [null, null, null];
+  const lon = coords[0];
+  const lat = coords[1];
+  let depth = coords[2];
+  if (depth === undefined || depth === null) {
+    const depRaw = pickProp(p, ['dep', 'depth'], null);
+    depth = depRaw !== null ? Number(depRaw) : null;
+  }
+  if (depth !== undefined && depth !== null && !isNaN(depth) && depth < 0) depth = -depth;
+  if (depth !== null && isNaN(depth)) depth = null;
+
+  const mag = Number(pickProp(p, ['mag', 'magnitude', 'Magunitude', 'M'], NaN));
+  const timeRaw = pickProp(p, ['time', 'origin_time', 'at', 'date'], null);
+  const placeRaw = pickProp(p, ['place', 'epi', 'region', 'name'], null);
+  const placeByCoord = lookupEpicenterName(lon, lat);
+  const place = placeByCoord || placeRaw || '不明';
+  const maxInt = pickProp(p, ['maxInt', 'max_int', 'maxi', 'intensity'], null);
+
+  let timeMs = null;
+  if (timeRaw) {
+    const t = new Date(timeRaw);
+    if (!isNaN(t)) timeMs = t.getTime();
+  }
+
+  return {
+    lon, lat, depth,
+    mag: isNaN(mag) ? null : mag,
+    time: timeMs,
+    timeRaw,
+    place,
+    maxInt,
+    raw: p
+  };
+}
+
+const hypoDayCache = new Map();
+
+function dayKey(dateObj) {
+  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(dateObj.getDate())}`;
+}
+
+async function fetchHypoDay(dateObj, { signal } = {}) {
+  const url = hypoUrlFor(dateObj);
+  await loadEpinameData();
+  const res = await fetch(url, { signal, mode: 'cors' });
+  if (!res.ok) throw new Error(`HTTP ${res.status} @ ${url}`);
+  const gj = await res.json();
+  const feats = (gj.features || []).map(normalizeFeature).filter(f => f.lon != null && f.lat != null);
+  return feats;
+}
+
+async function fetchHypoRange(dates, onProgress) {
+  const all = [];
+  let done = 0;
+  let cacheHits = 0;
+  const errors = [];
+  for (const d of dates) {
+    const key = dayKey(d);
+    const cached = hypoDayCache.get(key);
+    if (cached) {
+      const isToday = key === dayKey(new Date());
+      if (!isToday) {
+        if (cached.error) errors.push({ date: d, error: cached.error });
+        else all.push(...cached.features);
+        done++; cacheHits++;
+        if (onProgress) onProgress(done, dates.length, errors, cacheHits);
+        continue;
+      }
+    }
+    try {
+      const feats = await fetchHypoDay(d);
+      hypoDayCache.set(key, { features: feats, error: null });
+      all.push(...feats);
+    } catch (e) {
+      hypoDayCache.set(key, { features: [], error: e });
+      errors.push({ date: d, error: e });
+    }
+    done++;
+    if (onProgress) onProgress(done, dates.length, errors, cacheHits);
+  }
+  return { features: all, errors, cacheHits };
+}
+
+function isRangeFullyCached(dates) {
+  const todayKey = dayKey(new Date());
+  return dates.every(d => {
+    const key = dayKey(d);
+    return key !== todayKey && hypoDayCache.has(key);
+  });
+}
+
+function buildFromCache(dates) {
+  const all = [];
+  const errors = [];
+  for (const d of dates) {
+    const cached = hypoDayCache.get(dayKey(d));
+    if (!cached) continue;
+    if (cached.error) errors.push({ date: d, error: cached.error });
+    else all.push(...cached.features);
+  }
+  return { features: all, errors };
+}
+
+let sharedMap = null;
+let sharedDateRange = { startDate: null, endDate: null, rawFeatures: null };
+let epicenterState = { data: [], startDate: null, endDate: null };
+
+function magColor(mag) {
+  if (mag == null) return '#8a8f9a';
+  if (mag < 3) return '#4fc3f7';
+  if (mag < 4) return '#39d98a';
+  if (mag < 5) return '#f9d55c';
+  if (mag < 6) return '#ff9f43';
+  if (mag < 7) return '#ff5470';
+  return '#d63aff';
+}
+
+function magRadius(mag) {
+  if (mag == null) return 3;
+  return Math.max(3, Math.min(22, mag * 3.2));
+}
+
+function featuresToGeoJSON(feats) {
+  const sorted = [...feats].sort((a, b) => (a.mag ?? -Infinity) - (b.mag ?? -Infinity));
+  return {
+    type: 'FeatureCollection',
+    features: sorted.map(f => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
+      properties: {
+        mag: f.mag,
+        depth: f.depth,
+        place: f.place,
+        time: f.timeRaw,
+        maxInt: f.maxInt,
+        color: magColor(f.mag),
+        radius: magRadius(f.mag)
+      }
+    }))
+  };
+}
+
+function applySharedFeatures(rawFeatures) {
+  const src = sharedMap.getSource('quake-src');
+  if (src) src.setData(featuresToGeoJSON(rawFeatures));
+
+  epicenterState.data = rawFeatures;
+  bvalueState.data = rawFeatures.filter(f => f.mag != null);
+
+  if (document.getElementById('bv-result')) {
+    computeAndRenderBvalue();
+  }
+}
+
+async function loadBaseGeoJsonLayers(worldDataPromise, prefDataPromise) {
+  try {
+    const [worldData, prefData] = await Promise.all([
+      worldDataPromise,
+      prefDataPromise
+    ]);
+
+    sharedMap.addSource('base-world', { type: 'geojson', data: worldData });
+    sharedMap.addLayer({
+      id: 'base-world-fill',
+      type: 'fill',
+      source: 'base-world',
+      paint: { 'fill-color': '#4d5468', 'fill-opacity': 1 }
+    });
+    sharedMap.addLayer({
+      id: 'base-world-line',
+      type: 'line',
+      source: 'base-world',
+      paint: { 'line-color': '#69708a', 'line-width': 0.6 }
+    });
+
+    sharedMap.addSource('base-pref', { type: 'geojson', data: prefData });
+    sharedMap.addLayer({
+      id: 'base-pref-fill',
+      type: 'fill',
+      source: 'base-pref',
+      paint: { 'fill-color': '#4d5468', 'fill-opacity': 1 }
+    });
+    sharedMap.addLayer({
+      id: 'base-pref-line',
+      type: 'line',
+      source: 'base-pref',
+      paint: { 'line-color': '#69708a', 'line-width': 0.6 }
+    });
+
+    const baseLayerIds = [
+      'base-world-fill', 'base-world-line',
+      'base-pref-fill', 'base-pref-line'
+    ];
+    const beforeId = sharedMap.getLayer('quake-circles') ? 'quake-circles' : undefined;
+    baseLayerIds.forEach(id => sharedMap.moveLayer(id, beforeId));
+  } catch (e) {
+    console.error('ベース地図（GeoJSON）の読み込みに失敗しました:', e);
+    toast('ベース地図データの読み込みに失敗しました');
+  }
+}
+
+async function loadPlateBoundaryLayer(plateDataPromise) {
+  try {
+    const data = await plateDataPromise;
+    sharedMap.addSource('plate-boundaries-src', { type: 'geojson', data });
+    sharedMap.addLayer({
+      id: 'plate-boundaries-line',
+      type: 'line',
+      source: 'plate-boundaries-src',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#cfe0ff',
+        'line-width': 1.3,
+        'line-opacity': 0.85
+      }
+    });
+    const beforeId = sharedMap.getLayer('quake-circles') ? 'quake-circles' : undefined;
+    sharedMap.moveLayer('plate-boundaries-line', beforeId);
+  } catch (e) {
+    console.error('プレート境界データの読み込みに失敗しました:', e);
+    toast('プレート境界データの読み込みに失敗しました');
+  }
+}
+
+function initSharedMap() {
+  sharedMap = new maplibregl.Map({
+    container: 'map-shared',
+    style: DARK_STYLE,
+    center: JAPAN_CENTER,
+    zoom: 4.4,
+    attributionControl: { compact: true }
+  });
+  sharedMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
+  sharedMap.on('load', () => {
+    const worldDataPromise = fetch(GEOJSON_WORLD_URL).then(r => r.json());
+    const prefDataPromise = fetch(GEOJSON_PREF_URL).then(r => r.json());
+    const plateDataPromise = fetch(GEOJSON_PLATE_BOUNDARIES_URL).then(r => r.json());
+
+    loadBaseGeoJsonLayers(worldDataPromise, prefDataPromise)
+      .then(() => loadPlateBoundaryLayer(plateDataPromise));
+
+    sharedMap.addSource('quake-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+    sharedMap.addLayer({
+      id: 'quake-circles',
+      type: 'circle',
+      source: 'quake-src',
+      paint: {
+        'circle-radius': ['get', 'radius'],
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.65,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': 'rgba(255,255,255,0.35)'
+      }
+    });
+
+    sharedMap.on('click', 'quake-circles', (e) => {
+      const feature = e.features[0];
+      const p = feature.properties;
+      const coords = feature.geometry.coordinates.slice();
+      const html = `
+        <div class="font-num" style="font-family:var(--font-base); font-size:12px; line-height:1.6;">
+          <div style="font-weight:700; font-size:13px; margin-bottom:4px;">${p.place || '不明'}</div>
+          M ${p.mag != null ? p.mag.toFixed(1) : '—'} / 深さ ${p.depth != null ? Math.round(p.depth) + 'km' : '—'}<br>
+          ${p.time ? new Date(p.time).toLocaleString('ja-JP') : ''}
+        </div>`;
+      new maplibregl.Popup({ closeButton: true })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(sharedMap);
+    });
+    sharedMap.on('mouseenter', 'quake-circles', () => sharedMap.getCanvas().style.cursor = 'pointer');
+    sharedMap.on('mouseleave', 'quake-circles', () => sharedMap.getCanvas().style.cursor = '');
+
+    sharedMap.addSource('bv-bbox', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    sharedMap.addLayer({
+      id: 'bv-bbox-fill',
+      type: 'fill',
+      source: 'bv-bbox',
+      paint: { 'fill-color': '#ff9f43', 'fill-opacity': 0.08 }
+    });
+    sharedMap.addLayer({
+      id: 'bv-bbox-line',
+      type: 'line',
+      source: 'bv-bbox',
+      paint: { 'line-color': '#ff9f43', 'line-width': 1.6, 'line-dasharray': [2, 2] }
+    });
+
+    sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'none');
+    sharedMap.setLayoutProperty('bv-bbox-line', 'visibility', 'none');
+
+    setupBboxDrawing();
+    buildSharedDatePanel();
+    buildEpicenterPanel();
+    buildBvaluePanel();
+    applyResponsivePanelLayout();
+  });
+}
+
+function defaultDateStr(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+const MOBILE_BREAKPOINT = 720;
+function isMobileLayout() { return window.innerWidth <= MOBILE_BREAKPOINT; }
+
+function applyResponsivePanelLayout() {
+  const mobile = isMobileLayout();
+  const panels = document.querySelectorAll('.floating-panel');
+  
+  panels.forEach(p => {
+    p.classList.toggle('mobile-stacked', mobile);
+    // デスクトップ時の本来の配置を記憶しておく
+    if (!p.dataset.desktopTop) p.dataset.desktopTop = p.style.top;
+    if (!p.dataset.desktopRight) p.dataset.desktopRight = p.style.right;
+    if (!p.dataset.desktopLeft) p.dataset.desktopLeft = p.style.left;
+  });
+
+  if (!mobile) {
+    // デスクトップ復帰時は、記憶しておいた本来の配置に戻す
+    panels.forEach(p => {
+      if (p.dataset.desktopTop) p.style.top = p.dataset.desktopTop;
+      if (p.dataset.desktopRight) p.style.right = p.dataset.desktopRight;
+      if (p.dataset.desktopLeft) p.style.left = p.dataset.desktopLeft;
+    });
+    return;
+  }
+
+  const MOBILE_TOP_GAP = 6;
+  const MOBILE_STACK_GAP = 6;
+  let cursorTop = MOBILE_TOP_GAP;
+
+  const sharedDatePanelRoot = document.getElementById('shared-date-panel-root');
+  const orderedPanels = [];
+  if (sharedDatePanelRoot && sharedDatePanelRoot.style.display !== 'none') {
+    orderedPanels.push(...sharedDatePanelRoot.querySelectorAll('.floating-panel'));
+  }
+  const activeView = document.querySelector('.view.active');
+  if (activeView) {
+    orderedPanels.push(...activeView.querySelectorAll('.floating-panel'));
+  }
+
+  orderedPanels.forEach(p => {
+    // b値の結果パネルは縦積みから除外し、画面右上に固定する
+    if (p.id === 'bv-result-panel') {
+      p.style.top = `${MOBILE_TOP_GAP}px`;
+      return; 
+    }
+    p.style.top = `${cursorTop}px`;
+    cursorTop += p.offsetHeight + MOBILE_STACK_GAP;
+  });
+}
+
+let responsiveLayoutResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(responsiveLayoutResizeTimer);
+  responsiveLayoutResizeTimer = setTimeout(applyResponsivePanelLayout, 120);
+});
+
+function buildSharedDatePanel() {
+  const container = document.getElementById('shared-date-panel-root');
+  const panel = document.createElement('div');
+  panel.className = 'floating-panel glass-panel';
+  panel.style.cssText = 'top:16px; left:16px; width:250px;';
+  const initStart = sharedDateRange.startDate || defaultDateStr(-7);
+  const initEnd = sharedDateRange.endDate || defaultDateStr(0);
+  panel.innerHTML = `
+    <div class="panel-title"><span class="bar"></span>期間指定</div>
+    <label class="field-label">開始日</label>
+    ${createDateFieldHTML('shared-date-start', initStart)}
+    <div style="height:8px;"></div>
+    <label class="field-label">終了日</label>
+    ${createDateFieldHTML('shared-date-end', initEnd)}
+    <div style="height:12px;"></div>
+    <button class="btn btn-accent" id="shared-date-fetch" style="width:100%;">データ取得</button>
+    <div style="height:10px;"></div>
+    <div class="status-text" id="shared-date-status">待機中</div>
+  `;
+  container.appendChild(panel);
+
+  bindDateField('shared-date-start');
+  bindDateField('shared-date-end');
+
+  document.getElementById('shared-date-fetch').addEventListener('click', runSharedFetch);
+
+  if (sharedDateRange.rawFeatures) {
+    runSharedFetch();
+  }
+}
+
+async function runSharedFetch() {
+  try {
+    await runSharedFetchInner();
+  } finally {
+    if (isMobileLayout()) applyResponsivePanelLayout();
+  }
+}
+
+async function runSharedFetchInner() {
+  const startStr = document.getElementById('shared-date-start').value;
+  const endStr = document.getElementById('shared-date-end').value;
+  const statusEl = document.getElementById('shared-date-status');
+  const btn = document.getElementById('shared-date-fetch');
+  if (!startStr || !endStr) { toast('開始日・終了日を指定してください'); return; }
+
+  const dates = dateRange(startStr, endStr);
+  if (dates.length === 0) { toast('日付範囲が不正です'); return; }
+  if (dates.length > 92) { toast('一度に取得できるのは最大92日分です'); return; }
+
+  if (sharedDateRange.rawFeatures && sharedDateRange.startDate === startStr && sharedDateRange.endDate === endStr) {
+    applySharedFeatures(sharedDateRange.rawFeatures);
+    statusEl.textContent = `${sharedDateRange.rawFeatures.length}件（共有データから即時反映）`;
+    return;
+  }
+
+  if (isRangeFullyCached(dates)) {
+    const { features, errors } = buildFromCache(dates);
+    sharedDateRange.startDate = startStr;
+    sharedDateRange.endDate = endStr;
+    sharedDateRange.rawFeatures = features;
+    applySharedFeatures(features);
+    statusEl.textContent = `${features.length}件（キャッシュから即時反映）${errors.length ? `／${errors.length}日分は取得失敗` : ''}`;
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.innerHTML = `<span class="spinner"></span> 取得中 0 / ${dates.length}`;
+
+  const { features, errors, cacheHits } = await fetchHypoRange(dates, (done, total, errs, hits) => {
+    statusEl.innerHTML = `<span class="spinner"></span> 取得中 ${done} / ${total}${hits ? `（キャッシュ ${hits}件）` : ''}`;
+  });
+
+  btn.disabled = false;
+  sharedDateRange.startDate = startStr;
+  sharedDateRange.endDate = endStr;
+  sharedDateRange.rawFeatures = features;
+  applySharedFeatures(features);
+
+  if (errors.length > 0) {
+    statusEl.textContent = `${features.length}件取得（${errors.length}日分は取得失敗）`;
+    console.warn('hypo fetch errors:', errors);
+    if (errors.length === dates.length) {
+      toast('CORSまたはネットワークエラーによりデータを取得できませんでした。ブラウザのコンソールを確認してください。');
+    }
+  } else {
+    statusEl.textContent = `${features.length}件取得完了${cacheHits ? `（うちキャッシュ ${cacheHits}日分）` : ''}`;
+  }
+}
+
+function buildEpicenterPanel() {
+  const container = document.getElementById('view-epicenter');
+  const panel = document.createElement('div');
+  panel.className = 'floating-panel glass-panel';
+  const sharedPanelH = document.querySelector('#shared-date-panel-root .floating-panel');
+  const topOffset = sharedPanelH ? (sharedPanelH.offsetTop + sharedPanelH.offsetHeight + 12) : 16;
+  panel.style.cssText = `top:${topOffset}px; left:16px; width:250px;`;
+  panel.innerHTML = `
+    <button type="button" class="panel-title" id="epi-legend-toggle" style="
+      margin-bottom:0; width:100%; background:none; border:none; padding:0; cursor:pointer;
+      display:flex; align-items:center; justify-content:space-between; gap:6px;
+      font-family:var(--font-base); font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-2);
+    ">
+      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>凡例（M）</span>
+      <svg id="epi-legend-caret" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="transition:transform .2s ease;"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div id="epi-legend-body" style="margin-top:8px; display:none;">
+      <div class="legend-row"><span class="legend-swatch" style="background:#4fc3f7;"></span>&lt; 3.0</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#39d98a;"></span>3.0–3.9</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#f9d55c;"></span>4.0–4.9</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#ff9f43;"></span>5.0–5.9</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#ff5470;"></span>6.0–6.9</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#d63aff;"></span>≥ 7.0</div>
+    </div>
+  `;
+  container.appendChild(panel);
+
+  const legendBody = panel.querySelector('#epi-legend-body');
+  const legendCaret = panel.querySelector('#epi-legend-caret');
+  const legendToggle = panel.querySelector('#epi-legend-toggle');
+  legendToggle.addEventListener('click', () => {
+    const isOpen = legendBody.style.display !== 'none';
+    legendBody.style.display = isOpen ? 'none' : 'block';
+    legendCaret.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    if (isMobileLayout()) applyResponsivePanelLayout();
+  });
+}
+
+let bvalueState = {
+  data: [],
+  bbox: null,
+  drawing: false,
+  drawStart: null
+};
+
+function setupBboxDrawing() {
+  let startLngLat = null;
+
+  function bboxPolygon(a, b) {
+    const minLon = Math.min(a.lng, b.lng), maxLon = Math.max(a.lng, b.lng);
+    const minLat = Math.min(a.lat, b.lat), maxLat = Math.max(a.lat, b.lat);
+    return {
+      bbox: [minLon, minLat, maxLon, maxLat],
+      geojson: {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[minLon, minLat], [maxLon, minLat], [maxLon, maxLat], [minLon, maxLat], [minLon, minLat]]]
+          },
+          properties: {}
+        }]
+      }
+    };
+  }
+
+  function finishDrawing() {
+    startLngLat = null;
+    bvalueState.drawing = false;
+    const btn = document.getElementById('bv-draw-btn');
+    if (btn) { btn.classList.remove('btn-accent'); btn.textContent = '領域を選択'; }
+    sharedMap.getCanvas().style.cursor = '';
+  }
+
+  function onClick(e) {
+    if (!bvalueState.drawing) return;
+    if (!startLngLat) {
+      startLngLat = e.lngLat;
+      const btn = document.getElementById('bv-draw-btn');
+      if (btn) btn.textContent = '2点目クリック';
+    } else {
+      const { bbox, geojson } = bboxPolygon(startLngLat, e.lngLat);
+      sharedMap.getSource('bv-bbox').setData(geojson);
+      bvalueState.bbox = bbox;
+      finishDrawing();
+      updateBboxLabel();
+      computeAndRenderBvalue();
+    }
+  }
+
+  sharedMap.on('click', onClick);
+
+  bvalueState._cancelDrawing = () => { finishDrawing(); };
+  bvalueState._onDrawModeChanged = (isDrawing) => {
+    if (!isDrawing) finishDrawing();
+    else sharedMap.getCanvas().style.cursor = 'crosshair';
+  };
+}
+
+function updateBboxLabel() {
+  const el = document.getElementById('bv-bbox-label');
+  if (!el) return;
+  if (!bvalueState.bbox) { el.textContent = '未選択'; return; }
+  const [minLon, minLat, maxLon, maxLat] = bvalueState.bbox;
+  el.textContent = `${minLat.toFixed(2)}〜${maxLat.toFixed(2)}°N, ${minLon.toFixed(2)}〜${maxLon.toFixed(2)}°E`;
+}
+
+function buildBvaluePanel() {
+  const container = document.getElementById('view-bvalue');
+
+  const panel = document.createElement('div');
+  panel.className = 'floating-panel glass-panel';
+  const sharedPanelHb = document.querySelector('#shared-date-panel-root .floating-panel');
+  const topOffsetB = sharedPanelHb ? (sharedPanelHb.offsetTop + sharedPanelHb.offsetHeight + 12) : 16;
+  panel.style.cssText = `top:${topOffsetB}px; left:16px; width:250px;`;
+  panel.innerHTML = `
+    <div class="panel-title"><span class="bar"></span>解析対象領域</div>
+    <div class="row">
+      <button class="btn btn-sm" id="bv-draw-btn">領域を選択</button>
+      <button class="btn btn-sm" id="bv-clear-btn">クリア</button>
+    </div>
+    <div style="height:6px;"></div>
+    <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base);">未選択</div>
+  `;
+  container.appendChild(panel);
+
+  const resultPanel = document.createElement('div');
+  resultPanel.id = 'bv-result-panel';
+  resultPanel.className = 'floating-panel glass-panel';
+  resultPanel.style.cssText = 'top:16px; right:16px; width:270px;';
+  resultPanel.innerHTML = `
+    <button type="button" class="panel-title" id="bv-result-toggle" style="
+      margin-bottom:0; width:100%; background:none; border:none; padding:0; cursor:pointer;
+      display:flex; align-items:center; justify-content:space-between; gap:6px;
+      font-family:var(--font-base); font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-2);
+    ">
+      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>b値 — Aki's MLE</span>
+      <svg id="bv-result-caret" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="transition:transform .2s ease; transform:rotate(180deg);"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div id="bv-result-body" style="margin-top:10px; display:block;">
+      <label class="field-label">Mc（マグニチュード完全性閾値）</label>
+      <div class="row">
+        <select id="bv-mc-mode" style="flex:1.2;">
+          <option value="auto">自動推定（最大曲率法）</option>
+          <option value="manual">手動指定</option>
+        </select>
+        <input type="number" id="bv-mc-manual" step="0.1" value="2.0" style="display:none; width:70px;">
+      </div>
+      <div style="height:14px;"></div>
+      <div id="bv-result" class="font-num" style="font-family:var(--font-base); font-size:12.5px; line-height:1.9; color:var(--text-1);">
+        地図上で解析対象領域を選択してください
+      </div>
+    </div>
+  `;
+  container.appendChild(resultPanel);
+
+  const bvResultBody = resultPanel.querySelector('#bv-result-body');
+  const bvResultCaret = resultPanel.querySelector('#bv-result-caret');
+  const bvResultToggle = resultPanel.querySelector('#bv-result-toggle');
+  
+  bvResultToggle.addEventListener('click', () => {
+    const isOpen = bvResultBody.style.display !== 'none';
+    bvResultBody.style.display = isOpen ? 'none' : 'block';
+    bvResultCaret.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    if (isMobileLayout()) applyResponsivePanelLayout();
+  });
+
+  document.getElementById('bv-draw-btn').addEventListener('click', () => {
+    bvalueState.drawing = !bvalueState.drawing;
+    const btn = document.getElementById('bv-draw-btn');
+    btn.classList.toggle('btn-accent', bvalueState.drawing);
+    btn.textContent = bvalueState.drawing ? '1点目クリック' : '領域を選択';
+    if (bvalueState._onDrawModeChanged) bvalueState._onDrawModeChanged(bvalueState.drawing);
+  });
+  
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && bvalueState.drawing && bvalueState._cancelDrawing) {
+      bvalueState._cancelDrawing();
+    }
+  });
+  
+  document.getElementById('bv-clear-btn').addEventListener('click', () => {
+    bvalueState.bbox = null;
+    sharedMap.getSource('bv-bbox').setData({ type: 'FeatureCollection', features: [] });
+    updateBboxLabel();
+    computeAndRenderBvalue();
+  });
+  
+  document.getElementById('bv-mc-mode').addEventListener('change', (e) => {
+    document.getElementById('bv-mc-manual').style.display = e.target.value === 'manual' ? 'block' : 'none';
+    computeAndRenderBvalue();
+  });
+  
+  document.getElementById('bv-mc-manual').addEventListener('input', computeAndRenderBvalue);
+
+  bvalueState.data = sharedDateRange.rawFeatures
+    ? sharedDateRange.rawFeatures.filter(f => f.mag != null)
+    : [];
+  computeAndRenderBvalue();
+}
+
+function pointInBbox(lon, lat, bbox) {
+  if (!bbox) return true;
+  const [minLon, minLat, maxLon, maxLat] = bbox;
+  return lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat;
+}
+
+function estimateMcMaxCurvature(mags, binWidth = 0.1) {
+  if (mags.length === 0) return null;
+  const rounded = mags.map(m => Math.round(m / binWidth) * binWidth);
+  const counts = new Map();
+  rounded.forEach(m => counts.set(m, (counts.get(m) || 0) + 1));
+  let bestM = null, bestCount = -1;
+  for (const [m, c] of counts.entries()) {
+    if (c > bestCount) { bestCount = c; bestM = m; }
+  }
+  return bestM;
+}
+
+function computeBvalueAki(mags, mc, binWidth = 0.1) {
+  const sample = mags.filter(m => m >= mc - 1e-9);
+  const n = sample.length;
+  if (n < 2) return { b: null, n, stdErr: null };
+  const meanM = sample.reduce((a, b) => a + b, 0) / n;
+  const b = Math.LOG10E / (meanM - (mc - binWidth / 2));
+  const variance = sample.reduce((acc, m) => acc + Math.pow(m - meanM, 2), 0) / (n * (n - 1));
+  const stdErr = 2.30 * Math.sqrt(variance) * b * b;
+  return { b, n, stdErr, meanM };
+}
+
+function computeAndRenderBvalue() {
+  try {
+    computeAndRenderBvalueInner();
+  } finally {
+    if (isMobileLayout()) applyResponsivePanelLayout();
+  }
+}
+
+function computeAndRenderBvalueInner() {
+  const resultEl = document.getElementById('bv-result');
+  if (!resultEl) return;
+
+  if (!bvalueState.bbox) {
+    resultEl.innerHTML = `<span style="color:var(--text-2);">地図上で解析対象領域を選択してください</span>`;
+    return;
+  }
+
+  const filtered = bvalueState.data.filter(f => pointInBbox(f.lon, f.lat, bvalueState.bbox));
+  const mags = filtered.map(f => f.mag).filter(m => m != null);
+
+  if (mags.length < 5) {
+    resultEl.innerHTML = `対象地震数: ${mags.length}<br><span style="color:var(--text-2);">解析には最低5件以上必要です</span>`;
+    return;
+  }
+
+  const mcMode = document.getElementById('bv-mc-mode').value;
+  let mc;
+  if (mcMode === 'manual') {
+    mc = parseFloat(document.getElementById('bv-mc-manual').value) || 2.0;
+  } else {
+    mc = estimateMcMaxCurvature(mags);
+  }
+
+  const { b, n, stdErr, meanM } = computeBvalueAki(mags, mc);
+
+  if (b == null) {
+    resultEl.innerHTML = `Mc以上のデータが不足しています（Mc=${mc.toFixed(1)}）`;
+    return;
+  }
+
+  const aValue = Math.log10(n) + b * mc;
+
+  resultEl.innerHTML = `
+    <div class="font-num" style="font-size:26px; font-weight:800; color:var(--accent); font-family:var(--font-base);">
+      b = ${b.toFixed(3)} <span style="font-size:13px; color:var(--text-2); font-weight:400;">± ${stdErr.toFixed(3)}</span>
+    </div>
+    <div class="divider" style="margin:8px 0;"></div>
+    総地震数（選択領域）: ${mags.length}<br>
+    Mc（完全性閾値）: ${mc.toFixed(1)}<br>
+    解析対象数（M≥Mc）: ${n}<br>
+    平均M: ${meanM.toFixed(2)}<br>
+    a値（推定）: ${aValue.toFixed(2)}
+  `;
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRad(d) { return d * Math.PI / 180; }
+
+function pPolarity(strikeDeg, dipDeg, rakeDeg, azDeg, toffDeg) {
+  const strike = toRad(strikeDeg), dip = toRad(dipDeg), rake = toRad(rakeDeg);
+  const az = toRad(azDeg), toff = toRad(toffDeg);
+  const phi = az - strike;
+
+  const sinToff = Math.sin(toff), cosToff = Math.cos(toff);
+  const sinPhi = Math.sin(phi), cosPhi = Math.cos(phi);
+  const sin2Phi = Math.sin(2 * phi);
+
+  const sinDip = Math.sin(dip), cosDip = Math.cos(dip);
+  const sin2Dip = Math.sin(2 * dip), cos2Dip = Math.cos(2 * dip);
+  const sinRake = Math.sin(rake), cosRake = Math.cos(rake);
+
+  const Rp =
+    cosRake * sinDip * sinToff * sinToff * sin2Phi
+    - cosRake * cosDip * 2 * sinToff * cosToff * cosPhi
+    + sinRake * sin2Dip * (cosToff * cosToff - sinToff * sinToff * sinPhi * sinPhi)
+    + sinRake * cos2Dip * 2 * sinToff * cosToff * sinPhi;
+
+  return Rp >= 0 ? 1 : -1;
+}
+
+function computePTAxes(strikeDeg, dipDeg, rakeDeg) {
+  const strike = toRad(strikeDeg), dip = toRad(dipDeg), rake = toRad(rakeDeg);
+
+  const n = [
+    -Math.sin(dip) * Math.sin(strike),
+    Math.sin(dip) * Math.cos(strike),
+    -Math.cos(dip)
+  ];
+  const d = [
+    Math.cos(rake) * Math.cos(strike) + Math.sin(rake) * Math.cos(dip) * Math.sin(strike),
+    Math.cos(rake) * Math.sin(strike) - Math.sin(rake) * Math.cos(dip) * Math.cos(strike),
+    -Math.sin(rake) * Math.sin(dip)
+  ];
+
+  const t = [(n[0] - d[0]) / Math.SQRT2, (n[1] - d[1]) / Math.SQRT2, (n[2] - d[2]) / Math.SQRT2];
+  const p = [(n[0] + d[0]) / Math.SQRT2, (n[1] + d[1]) / Math.SQRT2, (n[2] + d[2]) / Math.SQRT2];
+
+  function toAzToff(v) {
+    let [north, east, down] = v;
+    if (down < 0) { north = -north; east = -east; down = -down; }
+    const toff = Math.acos(Math.max(-1, Math.min(1, down))) * 180 / Math.PI; 
+    const az = Math.atan2(east, north) * 180 / Math.PI;
+    return { az, toff };
+  }
+
+  return { P: toAzToff(p), T: toAzToff(t) };
+}
+
+function projectLowerHemisphere(azDeg, toffDeg, cx, cy, R) {
+  const rNorm = Math.SQRT2 * Math.sin(toRad(toffDeg) / 2);
+  const az = toRad(azDeg);
+  const x = cx + R * rNorm * Math.sin(az);
+  const y = cy - R * rNorm * Math.cos(az);
+  return { x, y };
+}
+
+function renderBeachballDataUrl(strikeDeg, dipDeg, rakeDeg, size = 200) {
+  const COLOR_COMPRESS = [142, 142, 142];
+  const COLOR_TENSION  = [255, 255, 255]; 
+  const COLOR_BORDER   = '#b4b4b4';
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2, cy = size / 2;
+  const labelMargin = size * 0.09;
+  const R = size / 2 - 2 - labelMargin;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = `rgb(${COLOR_TENSION.join(',')})`;  
+  ctx.fillRect(0, 0, size, size);
+
+  const img = ctx.getImageData(0, 0, size, size);
+  const data = img.data;
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const x = (px - cx) / R;   
+      const y = -(py - cy) / R;  
+      const rNorm = Math.sqrt(x * x + y * y);
+      if (rNorm > 1) continue;
+      const toff = 2 * Math.asin(Math.min(1, rNorm / Math.SQRT2)) * 180 / Math.PI;
+      const az = Math.atan2(x, y) * 180 / Math.PI; 
+      const pol = pPolarity(strikeDeg, dipDeg, rakeDeg, az, toff);
+      if (pol > 0) {
+        const idx = (py * size + px) * 4;
+        data[idx] = COLOR_COMPRESS[0]; data[idx + 1] = COLOR_COMPRESS[1]; data[idx + 2] = COLOR_COMPRESS[2]; data[idx + 3] = 255; 
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = COLOR_BORDER;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  const compassFontSize = Math.round(size * 0.075);
+  ctx.font = `${compassFontSize}px ${getComputedStyle(document.body).fontFamily || 'sans-serif'}`;
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const compassR = R + labelMargin * 0.62;
+  ctx.fillText('N', cx, cy - compassR);
+  ctx.fillText('S', cx, cy + compassR);
+  ctx.fillText('E', cx + compassR, cy);
+  ctx.fillText('W', cx - compassR, cy);
+
+  const axes = computePTAxes(strikeDeg, dipDeg, rakeDeg);
+  const axisFontSize = Math.round(size * 0.08);
+  ctx.font = `bold ${axisFontSize}px ${getComputedStyle(document.body).fontFamily || 'sans-serif'}`;
+  const axisR = R * 0.55;
+
+  function drawAxisLabel(label, az, toff, isOnDark) {
+    const pos = projectLowerHemisphere(az, toff, cx, cy, R);
+    const dx = pos.x - cx, dy = pos.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const clampedDist = Math.min(dist, axisR);
+    const scale = dist > 0 ? clampedDist / dist : 0;
+    const lx = cx + dx * scale;
+    const ly = cy + dy * scale;
+    ctx.fillStyle = isOnDark ? '#ffffff' : '#000000';
+    ctx.fillText(label, lx, ly);
+  }
+
+  const pIsDark = pPolarity(strikeDeg, dipDeg, rakeDeg, axes.P.az, axes.P.toff) > 0;
+  const tIsDark = pPolarity(strikeDeg, dipDeg, rakeDeg, axes.T.az, axes.T.toff) > 0;
+  drawAxisLabel('P', axes.P.az, axes.P.toff, pIsDark);
+  drawAxisLabel('T', axes.T.az, axes.T.toff, tIsDark);
+
+  return canvas.toDataURL('image/png');
+}
+
+function mechProxyUrl(targetUrl) {
+  return `https://r.jina.ai/${targetUrl}`;
+}
+
+async function fetchMechList() {
+  const target = 'https://www.data.jma.go.jp/eew/data/mech/top.html';
+  const res = await fetch(mechProxyUrl(target));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return parseMechListText(text);
+}
+
+function splitMdRow(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map(c => c.trim());
+}
+
+function parseMdLink(cell) {
+  const m = /\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/.exec(cell);
+  if (!m) return null;
+  return { label: m[1], url: m[2] };
+}
+
+function parseJmaTimeStrToMs(timeStr) {
+  const m = /(\d{4})年(\d{2})月(\d{2})日(\d{2})時(\d{2})分/.exec(timeStr || '');
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]), h = Number(m[4]), mi = Number(m[5]);
+  return Date.UTC(y, mo - 1, d, h, mi) - 9 * 60 * 60 * 1000;
+}
+
+function parseMechListText(text) {
+  const lines = text.split('\n');
+  const rows = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.includes('|') || !/\d{4}年\d{2}月\d{2}日\d{2}時\d{2}分頃/.test(line)) continue;
+
+    const cells = splitMdRow(line);
+    if (cells.length < 6) continue;
+
+    const timeMatch = /(\d{4}年\d{2}月\d{2}日\d{2}時\d{2}分頃)/.exec(cells[0]);
+    if (!timeMatch) continue;
+    const timeStr = timeMatch[1];
+
+    let lat = null, lon = null, depth = null, mag = null, place = null;
+    const links = [];
+    for (const c of cells.slice(1)) {
+      const latM = /北緯([\d.]+)度/.exec(c);
+      const lonM = /東経([\d.]+)度/.exec(c);
+      const depM = depth == null && /^(約?[\d.]+\s*km|ごく浅い)$/.exec(c);
+      if (latM) { lat = parseFloat(latM[1]); continue; }
+      if (lonM) { lon = parseFloat(lonM[1]); continue; }
+      if (depM) { depth = c; continue; }
+      const link = parseMdLink(c);
+      if (link) { links.push(link); continue; }
+      if (c === '-') { links.push(null); continue; }
+      if (/^[\d.]+$/.test(c) && mag == null) { mag = parseFloat(c); continue; }
+      if (c && place == null && !/^[\d.]+$/.test(c)) { place = c; continue; }
+    }
+
+    if (lat == null || lon == null || mag == null) continue;
+
+    const solutions = [];
+    if (links[0]) solutions.push({ source: 'jma', kind: 'initial', label: '初動解', url: links[0].url });
+    if (links[1]) solutions.push({ source: 'jma', kind: 'cmt-domestic', label: 'CMT解(国内)', url: links[1].url });
+    if (links[2]) solutions.push({ source: 'jma', kind: 'cmt-world', label: 'CMT解(全世界)', url: links[2].url });
+
+    rows.push({
+      source: 'jma',
+      timeStr,
+      timeMs: parseJmaTimeStrToMs(timeStr),
+      lat, lon,
+      depth: depth || '不明',
+      mag,
+      place: place || '不明',
+      initial: links[0] || null,
+      cmtDomestic: links[1] || null,
+      cmtWorld: links[2] || null,
+      solutions
+    });
+  }
+  return rows;
+}
+
+function mechFigImageUrl(figHtmlUrl) {
+  return figHtmlUrl.replace(/\.html$/, '.png');
+}
+
+function fitMechImage(img) {
+  const src = img.currentSrc || img.src || '';
+  if (src.startsWith('data:')) {
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '100%';
+    img.style.objectFit = 'contain';
+    img.style.transform = 'none';
+    return;
+  }
+  const fname = src.split('/').pop() || '';
+  let scale = 1.3;
+  if (/^mc/.test(fname)) scale = 1.55;         
+  else if (/^cmt/.test(fname)) scale = 1.15;   
+  else if (/^world/.test(fname)) scale = 1.3;  
+
+  img.style.width = '100%';
+  img.style.height = '100%';
+  img.style.maxWidth = '100%';
+  img.style.maxHeight = '100%';
+  img.style.objectFit = 'contain';
+  img.style.transform = `scale(${scale})`;
+}
+
+function mechImageFallback(img) {
+  const parent = img.parentElement;
+  if (parent) {
+    parent.innerHTML = '<span style="color:var(--text-2); font-size:11px; padding:10px; text-align:center;">画像取得不可</span>';
+  }
+}
+
+async function fetchMechDetail(url) {
+  const res = await fetch(mechProxyUrl(url));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return parseMechDetailText(text, url);
+}
+
+function parseMechDetailText(text, sourceUrl) {
+  const lines = text.split('\n');
+  const detail = {
+    imageUrl: null,
+    planes: null,        
+    axes: null,           
+    stations: null,
+    vr: null,
+    centroid: null,       
+    moment: null          
+  };
+
+  let axesAzimuth = null; 
+  let axesPlunge = null;  
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const imgM = /!\[[^\]]*\]\((https?:\/\/[^\s)]+\.png)\)/.exec(line);
+    if (imgM && !detail.imageUrl) detail.imageUrl = imgM[1];
+
+    if (!line.includes('|')) continue;
+    const cells = splitMdRow(line);
+
+    if (!detail.centroid) {
+      const timeM = /^(\d{4}年\d{2}月\d{2}日\d{2}時\d{2}分[\d.]+秒)$/.exec((cells[0] || '').trim());
+      const latM = /北緯([\d.]+)度([\d.]+)分/.exec(cells[1] || '');
+      const lonM = /東経([\d.]+)度([\d.]+)分/.exec(cells[2] || '');
+      if (timeM && latM && lonM) {
+        detail.centroid = {
+          timeStr: timeM[1],
+          lat: (parseFloat(latM[1]) + parseFloat(latM[2]) / 60).toFixed(3),
+          lon: (parseFloat(lonM[1]) + parseFloat(lonM[2]) / 60).toFixed(3),
+          depth: (cells[3] || '').trim(),
+          mw: (cells[4] || '').trim()
+        };
+        continue;
+      }
+    }
+
+    if (!detail.moment) {
+      const prevCells = i > 0 && lines[i - 1].includes('|') ? splitMdRow(lines[i - 1]) : null;
+      const isMomentHeader = prevCells && prevCells[0] === 'Mo' && prevCells[1] === 'Mrr';
+      if (isMomentHeader && cells.length >= 10 && /^-?[\d.]+$/.test(cells[0])) {
+        detail.moment = {
+          mo: cells[0], mrr: cells[1], mtt: cells[2], mff: cells[3],
+          mrt: cells[4], mrf: cells[5], mtf: cells[6],
+          exponent: cells[7], unit: cells[8], nonDc: cells[9]
+        };
+        continue;
+      }
+    }
+
+    if (cells[0] && cells[0].includes('断層面解')) {
+      if (!detail.planes) detail.planes = [];
+      detail.planes.push({
+        label: cells[0],
+        strike: cells[1], dip: cells[2], rake: cells[3]
+      });
+      if (cells.length >= 8) {
+        if (cells[4] === '方位') {
+          axesAzimuth = { p: cells[5], t: cells[6], n: cells[7] };
+        } else if (cells[4] === '傾斜') {
+          axesPlunge = { p: cells[5], t: cells[6], n: cells[7] };
+        }
+      }
+    }
+
+    if (cells.some(c => c.includes('観測点数'))) {
+      const idx = cells.findIndex(c => c.includes('観測点数'));
+      if (idx >= 0 && cells[idx + 1]) detail.stations = cells[idx + 1];
+      const scoreIdx = cells.findIndex(c => c.includes('V.R.') || c === 'スコア');
+      if (scoreIdx >= 0 && cells[scoreIdx + 1]) {
+        detail.vr = cells[scoreIdx + 1];
+        detail.vrLabel = cells[scoreIdx]; 
+      }
+    }
+  }
+
+  if (axesAzimuth || axesPlunge) {
+    detail.axes = {
+      p: { azimuth: axesAzimuth ? axesAzimuth.p : null, plunge: axesPlunge ? axesPlunge.p : null },
+      t: { azimuth: axesAzimuth ? axesAzimuth.t : null, plunge: axesPlunge ? axesPlunge.t : null },
+      n: { azimuth: axesAzimuth ? axesAzimuth.n : null, plunge: axesPlunge ? axesPlunge.n : null }
+    };
+  }
+
+  if (!detail.imageUrl) {
+    detail.imageUrl = mechFigImageUrl(sourceUrl);
+  }
+  return detail;
+}
+
+const USGS_FDSN_BASE = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
+const USGS_MIN_MAGNITUDE = 5.0;
+const USGS_LOOKBACK_DAYS = 5;
+
+function usgsQueryUrl(producttype) {
+  const end = new Date();
+  const start = new Date(end.getTime() - USGS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const params = new URLSearchParams({
+    format: 'geojson',
+    starttime: start.toISOString(),
+    endtime: end.toISOString(),
+    minmagnitude: String(USGS_MIN_MAGNITUDE),
+    producttype,
+    orderby: 'time'
+  });
+  return `${USGS_FDSN_BASE}?${params.toString()}`;
+}
+
+async function fetchUsgsList() {
+  const [fmRes, mtRes, imtRes] = await Promise.all([
+    fetch(usgsQueryUrl('focal-mechanism')),
+    fetch(usgsQueryUrl('moment-tensor')),
+    fetch(usgsQueryUrl('internal-moment-tensor'))
+  ]);
+  const [fmData, mtData, imtData] = await Promise.all([
+    fmRes.ok ? fmRes.json() : { features: [] },
+    mtRes.ok ? mtRes.json() : { features: [] },
+    imtRes.ok ? imtRes.json() : { features: [] }
+  ]);
+
+  const byId = new Map();
+  for (const feat of fmData.features) {
+    byId.set(feat.id, { feat, hasFocalMechanism: true, hasMomentTensor: false });
+  }
+  for (const feat of [...mtData.features, ...imtData.features]) {
+    const existing = byId.get(feat.id);
+    if (existing) existing.hasMomentTensor = true;
+    else byId.set(feat.id, { feat, hasFocalMechanism: false, hasMomentTensor: true });
+  }
+
+  const rows = [];
+  for (const { feat, hasFocalMechanism, hasMomentTensor } of byId.values()) {
+    const p = feat.properties || {};
+    const [lon, lat] = feat.geometry ? feat.geometry.coordinates : [null, null];
+    if (lat == null || lon == null || p.mag == null) continue;
+
+    const solutions = [];
+    if (hasFocalMechanism) {
+      solutions.push({ source: 'usgs', kind: 'focal-mechanism', label: 'USGS初動解', eventId: feat.id });
+    }
+    if (hasMomentTensor) {
+      solutions.push({ source: 'usgs', kind: 'moment-tensor', label: 'USGS CMT', eventId: feat.id });
+    }
+    if (!solutions.length) continue;
+
+    rows.push({
+      source: 'usgs',
+      eventId: feat.id,
+      timeStr: formatUsgsTime(p.time),
+      timeMs: p.time,
+      lat, lon,
+      depth: feat.geometry && feat.geometry.coordinates[2] != null ? `${feat.geometry.coordinates[2].toFixed(0)}km` : '不明',
+      mag: p.mag,
+      place: p.place || '不明',
+      solutions
+    });
+  }
+  return rows;
+}
+
+function formatUsgsTime(timeMs) {
+  if (timeMs == null) return '不明';
+  const d = new Date(timeMs);
+  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const y = jst.getUTCFullYear();
+  const mo = String(jst.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(jst.getUTCDate()).padStart(2, '0');
+  const h = String(jst.getUTCHours()).padStart(2, '0');
+  const mi = String(jst.getUTCMinutes()).padStart(2, '0');
+  return `${y}年${mo}月${day}日${h}時${mi}分頃`;
+}
+
+function buildUsgsDetail(feat, kind) {
+  const products = (feat.properties && feat.properties.products) || {};
+  let prod = (products[kind] && products[kind][0]) || null;
+  if (!prod && kind === 'moment-tensor') {
+    prod = (products['internal-moment-tensor'] && products['internal-moment-tensor'][0]) || null;
+  }
+  const pr = (prod && prod.properties) || {};
+
+  const detail = {
+    imageUrl: null,
+    planes: null,
+    axes: null,
+    stations: pr['num-stations-used'] || null,
+    vr: null,
+    vrLabel: 'DC比',
+    centroid: null,
+    moment: null,
+    sourceLabel: 'USGS',
+    externalUrl: (feat.properties && feat.properties.url) || null
+  };
+
+  const np1 = { label: '断層面解１', strike: pr['nodal-plane-1-strike'], dip: pr['nodal-plane-1-dip'], rake: pr['nodal-plane-1-rake'] };
+  const np2 = { label: '断層面解２', strike: pr['nodal-plane-2-strike'], dip: pr['nodal-plane-2-dip'], rake: pr['nodal-plane-2-rake'] };
+  if (np1.strike != null || np2.strike != null) {
+    detail.planes = [np1, np2];
+    try {
+      detail.imageUrl = renderBeachballDataUrl(
+        parseFloat(np1.strike), parseFloat(np1.dip), parseFloat(np1.rake), 260
+      );
+    } catch (e) {
+      detail.imageUrl = null;
+    }
+  }
+
+  if (pr['percent-double-couple'] != null) {
+    const dcPct = Math.round(parseFloat(pr['percent-double-couple']) * 100);
+    detail.vr = `${dcPct}%`;
+  }
+
+  if (pr['t-axis-azimuth'] != null || pr['p-axis-azimuth'] != null) {
+    detail.axes = {
+      p: { azimuth: pr['p-axis-azimuth'], plunge: pr['p-axis-plunge'] },
+      t: { azimuth: pr['t-axis-azimuth'], plunge: pr['t-axis-plunge'] },
+      n: { azimuth: pr['n-axis-azimuth'], plunge: pr['n-axis-plunge'] }
+    };
+  }
+
+  if (pr['derived-magnitude'] || pr['scalar-moment']) {
+    const moRaw = parseFloat(pr['scalar-moment']);
+    let mantissa = moRaw, exponent = 0;
+    if (isFinite(moRaw) && moRaw > 0) {
+      exponent = Math.floor(Math.log10(moRaw));
+      mantissa = (moRaw / Math.pow(10, exponent)).toFixed(2);
+    }
+    detail.moment = {
+      mo: isFinite(mantissa) ? String(mantissa) : (pr['scalar-moment'] || '—'),
+      exponent: String(exponent),
+      unit: 'Nm',
+      mrr: pr['tensor-mrr'] ?? '—', mtt: pr['tensor-mtt'] ?? '—', mff: pr['tensor-mpp'] ?? '—',
+      mrt: pr['tensor-mrt'] ?? '—', mrf: pr['tensor-mrp'] ?? '—', mtf: pr['tensor-mtp'] ?? '—',
+      nonDc: pr['percent-double-couple'] ? `${(100 - Math.round(parseFloat(pr['percent-double-couple']) * 100))}%` : '—'
+    };
+  }
+
+  if (pr['derived-latitude'] != null && pr['derived-longitude'] != null) {
+    detail.centroid = {
+      timeStr: pr['derived-eventtime'] ? formatUsgsTime(Date.parse(pr['derived-eventtime'])) : (feat.properties.time ? formatUsgsTime(feat.properties.time) : '不明'),
+      lat: Number(pr['derived-latitude']).toFixed(3),
+      lon: Number(pr['derived-longitude']).toFixed(3),
+      depth: pr['derived-depth'] ? `${Math.round(parseFloat(pr['derived-depth']))}km` : '不明',
+      mw: pr['derived-magnitude'] || (feat.properties.mag != null ? feat.properties.mag.toFixed(1) : '—')
+    };
+  }
+
+  return detail;
+}
+
+async function fetchUsgsDetail(eventId, kind) {
+  const url = `${USGS_FDSN_BASE}?eventid=${encodeURIComponent(eventId)}&format=geojson`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const feat = await res.json();
+  return buildUsgsDetail(feat, kind);
+}
+
+const MECH_MERGE_TIME_TOLERANCE_MS = 120 * 1000;
+const MECH_MERGE_DISTANCE_KM = 300;
+
+function mergeMechRows(jmaRows, usgsRows) {
+  const usedUsgsIdx = new Set();
+  const merged = jmaRows.map(jr => {
+    if (jr.timeMs == null) return jr;
+    let bestIdx = -1, bestDist = Infinity;
+    usgsRows.forEach((ur, i) => {
+      if (usedUsgsIdx.has(i)) return;
+      if (ur.timeMs == null) return;
+      const dt = Math.abs(ur.timeMs - jr.timeMs);
+      if (dt > MECH_MERGE_TIME_TOLERANCE_MS) return;
+      const dist = haversineKm(jr.lat, jr.lon, ur.lat, ur.lon);
+      if (dist > MECH_MERGE_DISTANCE_KM) return;
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    });
+    if (bestIdx === -1) return jr;
+
+    usedUsgsIdx.add(bestIdx);
+    const ur = usgsRows[bestIdx];
+    return {
+      ...jr,
+      mergedFrom: ['jma', 'usgs'],
+      solutions: [...jr.solutions, ...ur.solutions]
+    };
+  });
+
+  usgsRows.forEach((ur, i) => {
+    if (!usedUsgsIdx.has(i)) merged.push(ur);
+  });
+
+  merged.sort((a, b) => (b.timeMs ?? 0) - (a.timeMs ?? 0));
+  return merged;
+}
+
+const mechState = {
+  rows: [],
+  selectedIdx: null,
+  detailCache: new Map() 
+};
+
+function renderMechList() {
+  const listEl = document.getElementById('mech-list');
+  if (!listEl) return;
+  listEl.innerHTML = mechState.rows.map((r, i) => {
+    const badge = r.mergedFrom ? 'JMA+USGS' : (r.source === 'usgs' ? 'USGS' : 'JMA');
+    const badgeColor = r.mergedFrom ? 'var(--accent-2)' : (r.source === 'usgs' ? 'var(--accent-mag)' : 'var(--text-2)');
+    return `
+      <div class="mech-item${mechState.selectedIdx === i ? ' selected' : ''}" data-idx="${i}" style="
+        padding:12px 10px; margin-top:10px; border-radius:12px;
+        background:rgba(255,255,255,0.04); border:1px solid var(--glass-border);
+      ">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+          <div style="font-weight:700; font-size:13.5px;">${r.place}</div>
+          <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
+            <span style="font-size:9.5px; color:${badgeColor}; border:1px solid ${badgeColor}; border-radius:6px; padding:1px 5px;">${badge}</span>
+            <div class="font-num" style="font-family:var(--font-base); font-size:13px; color:var(--accent);">M${r.mag.toFixed(1)}</div>
+          </div>
+        </div>
+        <div class="font-num" style="font-size:11.5px; color:var(--text-2); margin-top:2px; font-family:var(--font-base);">
+          ${r.timeStr} / 北緯${r.lat}° 東経${r.lon}° / 深さ${r.depth}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('.mech-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = Number(el.dataset.idx);
+      selectMechItem(idx);
+    });
+  });
+}
+
+function selectMechItem(idx) {
+  mechState.selectedIdx = idx;
+  renderMechList();
+  renderMechDetailPanel(idx);
+}
+
+function renderMechDetailPanel(idx) {
+  const detailCol = document.getElementById('mech-detail-col');
+  if (!detailCol) return;
+  const r = mechState.rows[idx];
+  if (!r) return;
+
+  const solutions = r.solutions || [];
+
+  detailCol.innerHTML = `
+    <div class="glass-panel" style="padding:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap;">
+        <div style="font-weight:700; font-size:15px;">${r.place}</div>
+        <div class="font-num" style="font-family:var(--font-base); font-size:14px; color:var(--accent);">M${r.mag.toFixed(1)}</div>
+      </div>
+      <div class="font-num" style="font-size:11.5px; color:var(--text-2); margin-top:3px; font-family:var(--font-base);">
+        ${r.timeStr} / 北緯${r.lat}° 東経${r.lon}° / 深さ${r.depth}
+        ${r.mergedFrom ? `<span style="color:var(--accent-2); margin-left:6px;">（JMA・USGS統合）</span>` : ''}
+      </div>
+      <div class="divider"></div>
+      ${solutions.length ? `
+        <div style="display:flex; gap:6px; flex-wrap:wrap;" id="mech-tab-row"></div>
+        <div id="mech-detail-body" style="margin-top:12px;"></div>
+      ` : `<div class="mech-detail-placeholder">この地震の発震機構解はまだ公開されていません</div>`}
+    </div>
+  `;
+
+  if (!solutions.length) return;
+
+  const tabRow = document.getElementById('mech-tab-row');
+  tabRow.innerHTML = solutions.map((s, i) =>
+    `<span class="mech-tab btn btn-sm${i === 0 ? ' btn-accent' : ''}" data-idx="${i}">${s.label}</span>`
+  ).join('');
+
+  tabRow.querySelectorAll('.mech-tab').forEach(el => {
+    el.addEventListener('click', () => {
+      tabRow.querySelectorAll('.mech-tab').forEach(t => t.classList.remove('btn-accent'));
+      el.classList.add('btn-accent');
+      const solIdx = Number(el.dataset.idx);
+      loadMechDetailBody(solutions[solIdx]);
+    });
+  });
+
+  loadMechDetailBody(solutions[0]);
+}
+
+async function loadMechDetailBody(solution) {
+  const bodyEl = document.getElementById('mech-detail-body');
+  if (!bodyEl) return;
+  const cacheKey = solution.source === 'jma' ? solution.url : `usgs:${solution.eventId}:${solution.kind}`;
+  bodyEl.innerHTML = `<div class="status-text"><span class="spinner"></span> ${solution.label}を読み込み中...</div>`;
+  try {
+    let detail = mechState.detailCache.get(cacheKey);
+    if (!detail) {
+      if (solution.source === 'jma') {
+        detail = await fetchMechDetail(solution.url);
+      } else {
+        detail = await fetchUsgsDetail(solution.eventId, solution.kind);
+      }
+      mechState.detailCache.set(cacheKey, detail);
+    }
+    renderMechDetailBody(bodyEl, detail, solution);
+  } catch (e) {
+    console.error(e);
+    const fallbackUrl = solution.source === 'jma' ? solution.url : `https://earthquake.usgs.gov/earthquakes/eventpage/${solution.eventId}/moment-tensor`;
+    const fallbackLabel = solution.source === 'jma' ? '気象庁ページで直接見る' : 'USGSページで直接見る';
+    bodyEl.innerHTML = `
+      <span style="color:var(--danger); font-size:12px;">詳細の取得に失敗しました: ${e.message}</span>
+      <div style="margin-top:8px; text-align:center;">
+        <a href="${fallbackUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">${fallbackLabel} ↗</a>
+      </div>
+    `;
+  }
+}
+
+function renderMechDetailBody(bodyEl, detail, solution) {
+  const plane = (detail.planes && detail.planes[0]) || null;
+  const plane2 = (detail.planes && detail.planes[1]) || null;
+  const axes = detail.axes;
+  const moment = detail.moment;
+  const centroid = detail.centroid;
+  const linkUrl = solution.source === 'jma' ? solution.url : (detail.externalUrl || `https://earthquake.usgs.gov/earthquakes/eventpage/${solution.eventId}`);
+  const linkLabel = solution.source === 'jma' ? '気象庁ページで詳細を見る' : 'USGSページで詳細を見る';
+
+  bodyEl.innerHTML = `
+    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+      <div style="
+        flex:0 0 auto;
+        background:#000; border-radius:10px; overflow:hidden;
+        display:flex; justify-content:center; align-items:center;
+        width:180px; height:180px;
+        border:1px solid var(--glass-border);
+      ">
+        ${detail.imageUrl ? `
+        <img src="${detail.imageUrl}" alt="震源球" style="
+          max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain;
+          mix-blend-mode:screen; filter:brightness(1.05);
+        " onload="fitMechImage(this)" onerror="mechImageFallback(this)">
+        ` : `<span style="color:var(--text-2); font-size:11px; padding:10px; text-align:center;">震源球を描画できませんでした</span>`}
+      </div>
+      <div style="flex:1 1 240px; min-width:200px;">
+        ${centroid ? `
+        <div style="font-size:10.5px; color:var(--text-2); letter-spacing:0.06em; margin-bottom:4px;">セントロイド（Mw）</div>
+        <div class="font-num" style="font-family:var(--font-base); font-size:11.5px; color:var(--text-1); line-height:1.7;">
+          ${centroid.timeStr}<br>
+          北緯${centroid.lat}° 東経${centroid.lon}° / 深さ${centroid.depth}<br>
+          <span style="color:var(--accent); font-weight:700; font-size:13px;">Mw ${centroid.mw}</span>
+        </div>
+        <div class="divider" style="margin:8px 0;"></div>
+        ` : ''}
+        ${plane ? `
+        <div style="font-size:10.5px; color:var(--text-2); letter-spacing:0.06em; margin-bottom:4px;">断層パラメータ（走向 / 傾斜 / すべり角）</div>
+        <div class="font-num" style="font-family:var(--font-base); font-size:11.5px; color:var(--text-1); line-height:1.8;">
+          断層面解１： ${plane.strike}° / ${plane.dip}° / ${plane.rake}°<br>
+          ${plane2 ? `断層面解２： ${plane2.strike}° / ${plane2.dip}° / ${plane2.rake}°<br>` : ''}
+          ${detail.stations ? `観測点数： ${detail.stations}` : ''}${detail.vr ? ` ／ ${detail.vrLabel || 'V.R.'}： ${detail.vr}` : ''}
+        </div>` : `<div style="font-size:11.5px; color:var(--text-2);">断層パラメータを解析できませんでした</div>`}
+      </div>
+    </div>
+
+    ${axes ? `
+    <div class="divider"></div>
+    <div style="font-size:10.5px; color:var(--text-2); letter-spacing:0.06em; margin-bottom:6px;">主応力軸（方位 / 傾斜）</div>
+    <div class="font-num" style="font-family:var(--font-base); font-size:11.5px; color:var(--text-1); line-height:1.9; display:grid; grid-template-columns:auto 1fr; column-gap:14px; max-width:280px;">
+      <span style="color:var(--accent-2);">Ｐ軸（圧力軸）</span><span>${axes.p.azimuth ?? '—'}° / ${axes.p.plunge ?? '—'}°</span>
+      <span style="color:var(--accent-mag);">Ｔ軸（張力軸）</span><span>${axes.t.azimuth ?? '—'}° / ${axes.t.plunge ?? '—'}°</span>
+      <span style="color:var(--text-1);">Ｎ軸（中立軸）</span><span>${axes.n.azimuth ?? '—'}° / ${axes.n.plunge ?? '—'}°</span>
+    </div>` : ''}
+
+    ${moment ? `
+    <div class="divider"></div>
+    <div style="font-size:10.5px; color:var(--text-2); letter-spacing:0.06em; margin-bottom:6px;">モーメントテンソル解</div>
+    <div class="font-num" style="font-family:var(--font-base); font-size:11.5px; color:var(--text-1); line-height:1.7;">
+      Mo： ${moment.mo} × 10<sup>${moment.exponent}</sup> ${moment.unit.replace(/^×10\(指数\)\s*/, '')} ／ 非D.C.成分比： ${moment.nonDc}
+    </div>
+    <div class="font-num" style="font-family:var(--font-base); font-size:10.5px; color:var(--text-2); line-height:1.8; margin-top:6px; display:grid; grid-template-columns:repeat(3, auto); gap:2px 16px;">
+      <span>Mrr = ${moment.mrr}</span><span>Mtt = ${moment.mtt}</span><span>Mff = ${moment.mff}</span>
+      <span>Mrt = ${moment.mrt}</span><span>Mrf = ${moment.mrf}</span><span>Mtf = ${moment.mtf}</span>
+    </div>` : ''}
+
+    <div style="margin-top:12px; text-align:center;">
+      <a href="${linkUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">${linkLabel} ↗</a>
+    </div>
+  `;
+}
+
+async function initMechView() {
+  const scroll = document.getElementById('mech-scroll');
+  scroll.innerHTML = `
+    <div class="mech-layout">
+      <div class="mech-list-col">
+        <div class="glass-panel" style="padding:18px;">
+          <div class="panel-title"><span class="bar"></span>震源球 — 主な地震の発震機構解（速報値・JMA直近5日間 / USGS世界全体 M${USGS_MIN_MAGNITUDE}+）</div>
+          <div class="status-text" id="mech-status"><span class="spinner"></span> データを取得中...</div>
+          <div id="mech-list"></div>
+        </div>
+      </div>
+      <div class="mech-detail-col" id="mech-detail-col">
+        <div class="glass-panel" style="min-height:100%;">
+          <div class="mech-detail-placeholder">左のリストからイベントを選択してください</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const statusEl = document.getElementById('mech-status');
+
+  const [jmaResult, usgsResult] = await Promise.allSettled([
+    fetchMechList(),
+    fetchUsgsList()
+  ]);
+
+  const jmaRows = jmaResult.status === 'fulfilled' ? jmaResult.value : [];
+  const usgsRows = usgsResult.status === 'fulfilled' ? usgsResult.value : [];
+
+  if (jmaResult.status === 'rejected') console.error('JMA一覧取得失敗:', jmaResult.reason);
+  if (usgsResult.status === 'rejected') console.error('USGS一覧取得失敗:', usgsResult.reason);
+
+  const rows = mergeMechRows(jmaRows, usgsRows);
+
+  if (rows.length === 0) {
+    statusEl.innerHTML = `<span style="color:var(--danger);">データを取得できませんでした（JMA/USGSとも失敗、またはページ構造が変更された可能性があります）</span>
+      <div style="margin-top:8px;"><a href="https://www.data.jma.go.jp/eew/data/mech/top.html" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">気象庁ページを直接開く ↗</a></div>`;
+    return;
+  }
+
+  const mergedCount = rows.filter(r => r.mergedFrom).length;
+  const failNote = (jmaResult.status === 'rejected' ? 'JMA取得失敗 ' : '') + (usgsResult.status === 'rejected' ? 'USGS取得失敗' : '');
+  statusEl.innerHTML = `${rows.length}件のイベントを取得（うちJMA・USGS統合 ${mergedCount}件）` + (failNote ? ` <span style="color:var(--danger);">／ ${failNote}</span>` : '');
+  mechState.rows = rows;
+  renderMechList();
+}
+
+loadEpinameData(); 
+initSharedMap();
+initMechView();
+
+</script>
 </body>
 </html>
