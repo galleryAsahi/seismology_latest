@@ -769,6 +769,58 @@ function dateRange(startStr, endStr) {
   return out;
 }
 
+// Safari/iOSのDateパースはChrome/V8よりも仕様に厳格で、以下のような文字列を
+// Invalid Dateとして扱うことがある（Chromeでは通ってしまうため気づきにくい）：
+//   - "2026-07-06 14:23:45"（Tではなくスペース区切り）
+//   - "2026-07-06T14:23:45"（タイムゾーン情報なし。Safariにより解釈が割れる）
+//   - "2026/07/06 14:23:45"（スラッシュ区切り + スペース）
+// JMAの各種GeoJSON/JSON APIはエンドポイントによって微妙にtimeの書式が異なるため、
+// `new Date(raw)` に丸投げせず、まず正規表現でパースを試みてからフォールバックする。
+function parseTimeRobust(raw) {
+  if (raw == null) return null;
+
+  // すでに数値（epoch ms）ならそのまま使う
+  if (typeof raw === 'number') {
+    return isNaN(raw) ? null : raw;
+  }
+
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  // "YYYY-MM-DD(T|space)HH:mm:ss(.sss)?(Z|+09:00|+0900)?" 形式を明示的にパースする。
+  // タイムゾーンが無い場合はJST（+09:00）とみなす。JMAのデータは基本的に日本時間のため。
+  const m = /^(\d{4})[-/](\d{2})[-/](\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?\s*(Z|[+-]\d{2}:?\d{2})?$/.exec(s);
+  if (m) {
+    const [, y, mo, d, h, mi, sec, tz] = m;
+    const secNum = sec ? parseFloat(sec) : 0;
+    if (!tz) {
+      // タイムゾーン情報なし → JSTとして扱う（UTCに変換してからepoch msを求める）
+      const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Math.floor(secNum))
+        - 9 * 60 * 60 * 1000;
+      return utcMs + (secNum % 1) * 1000;
+    }
+    // タイムゾーンが明示されている場合はISO文字列として組み立て直し、
+    // Safariが確実にパースできる "T"区切り・コロン付きオフセット形式に正規化する。
+    let tzNorm = tz;
+    if (tzNorm !== 'Z' && !tzNorm.includes(':')) {
+      tzNorm = `${tzNorm.slice(0, 3)}:${tzNorm.slice(3)}`;
+    }
+    const isoStr = `${y}-${mo}-${d}T${h}:${mi}:${sec || '00'}${tzNorm}`;
+    const t = new Date(isoStr);
+    if (!isNaN(t.getTime())) return t.getTime();
+  }
+
+  // 上記パターンに合わなかった場合は素直に Date に渡す（YYYYMMDDHHMMSSの数値文字列や
+  // 既にブラウザ非依存な形式である可能性があるため）。ただし "-" を "/" に置換したり、
+  // スペースを "T" に置換した版も試し、Safariで弾かれるケースを追加でカバーする。
+  const candidates = [s, s.replace(' ', 'T'), s.replace(/\//g, '-')];
+  for (const c of candidates) {
+    const t = new Date(c);
+    if (!isNaN(t.getTime())) return t.getTime();
+  }
+  return null;
+}
+
 function pickProp(props, keys, fallback = null) {
   for (const k of keys) {
     if (props[k] !== undefined && props[k] !== null) return props[k];
@@ -796,10 +848,11 @@ function normalizeFeature(feature) {
   const place = placeByCoord || placeRaw || '不明';
   const maxInt = pickProp(p, ['maxInt', 'max_int', 'maxi', 'intensity'], null);
 
-  let timeMs = null;
-  if (timeRaw) {
-    const t = new Date(timeRaw);
-    if (!isNaN(t)) timeMs = t.getTime();
+  const timeMs = parseTimeRobust(timeRaw);
+  if (timeRaw != null && timeMs == null) {
+    // Safari/Chrome問わず、想定外の書式が来た場合はコンソールに残す。
+    // モバイルでだけ時刻が空欄になる系の不具合はここで気づける。
+    console.warn('地震時刻のパースに失敗しました:', timeRaw);
   }
 
   return {
@@ -1531,26 +1584,40 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 function toRad(d) { return d * Math.PI / 180; }
 
-function pPolarity(strikeDeg, dipDeg, rakeDeg, azDeg, toffDeg) {
+// strike/dip/rake（断層面固有の値）に依存する三角関数値を1回だけ計算しておくための関数。
+// renderBeachballDataUrl のピクセルループ内で strike/dip/rake を毎回ラジアン変換・
+// sin/cos計算するのは無駄なので、事前計算した値を pPolarityFast に渡す。
+function precomputeFaultTrig(strikeDeg, dipDeg, rakeDeg) {
   const strike = toRad(strikeDeg), dip = toRad(dipDeg), rake = toRad(rakeDeg);
+  return {
+    strike,
+    sinDip: Math.sin(dip), cosDip: Math.cos(dip),
+    sin2Dip: Math.sin(2 * dip), cos2Dip: Math.cos(2 * dip),
+    sinRake: Math.sin(rake), cosRake: Math.cos(rake)
+  };
+}
+
+// az/toff（ピクセルごとに変わる観測方向）だけをその都度ラジアン変換して判定する高速版。
+function pPolarityFast(trig, azDeg, toffDeg) {
   const az = toRad(azDeg), toff = toRad(toffDeg);
-  const phi = az - strike;
+  const phi = az - trig.strike;
 
   const sinToff = Math.sin(toff), cosToff = Math.cos(toff);
   const sinPhi = Math.sin(phi), cosPhi = Math.cos(phi);
   const sin2Phi = Math.sin(2 * phi);
 
-  const sinDip = Math.sin(dip), cosDip = Math.cos(dip);
-  const sin2Dip = Math.sin(2 * dip), cos2Dip = Math.cos(2 * dip);
-  const sinRake = Math.sin(rake), cosRake = Math.cos(rake);
-
   const Rp =
-    cosRake * sinDip * sinToff * sinToff * sin2Phi
-    - cosRake * cosDip * 2 * sinToff * cosToff * cosPhi
-    + sinRake * sin2Dip * (cosToff * cosToff - sinToff * sinToff * sinPhi * sinPhi)
-    + sinRake * cos2Dip * 2 * sinToff * cosToff * sinPhi;
+    trig.cosRake * trig.sinDip * sinToff * sinToff * sin2Phi
+    - trig.cosRake * trig.cosDip * 2 * sinToff * cosToff * cosPhi
+    + trig.sinRake * trig.sin2Dip * (cosToff * cosToff - sinToff * sinToff * sinPhi * sinPhi)
+    + trig.sinRake * trig.cos2Dip * 2 * sinToff * cosToff * sinPhi;
 
   return Rp >= 0 ? 1 : -1;
+}
+
+// 互換用ラッパー（既存の呼び出し箇所・他コードから単発で呼ばれても動くように残す）
+function pPolarity(strikeDeg, dipDeg, rakeDeg, azDeg, toffDeg) {
+  return pPolarityFast(precomputeFaultTrig(strikeDeg, dipDeg, rakeDeg), azDeg, toffDeg);
 }
 
 function computePTAxes(strikeDeg, dipDeg, rakeDeg) {
@@ -1589,9 +1656,143 @@ function projectLowerHemisphere(azDeg, toffDeg, cx, cy, R) {
   return { x, y };
 }
 
-function renderBeachballDataUrl(strikeDeg, dipDeg, rakeDeg, size = 200) {
+// --- ビーチボール（震源球）描画のWorker化 -------------------------------------
+// 260x260px でも67,600ピクセル分の三角関数計算が発生し、メインスレッドで同期実行すると
+// 一覧のイベントを連続でクリックした際にUIがカクつく（特にモバイル端末）。
+// Web Workerでピクセル判定処理を行い、ImageBitmapをメインスレッドでcanvasに描画する。
+let beachballWorker = null;
+let beachballWorkerReqId = 0;
+const beachballWorkerPending = new Map();
+
+function getBeachballWorker() {
+  if (beachballWorker) return beachballWorker;
+  const workerSrc = `
+    function toRad(d) { return d * Math.PI / 180; }
+    function precomputeFaultTrig(strikeDeg, dipDeg, rakeDeg) {
+      const strike = toRad(strikeDeg), dip = toRad(dipDeg), rake = toRad(rakeDeg);
+      return {
+        strike,
+        sinDip: Math.sin(dip), cosDip: Math.cos(dip),
+        sin2Dip: Math.sin(2 * dip), cos2Dip: Math.cos(2 * dip),
+        sinRake: Math.sin(rake), cosRake: Math.cos(rake)
+      };
+    }
+    function pPolarityFast(trig, azDeg, toffDeg) {
+      const az = toRad(azDeg), toff = toRad(toffDeg);
+      const phi = az - trig.strike;
+      const sinToff = Math.sin(toff), cosToff = Math.cos(toff);
+      const sinPhi = Math.sin(phi), cosPhi = Math.cos(phi);
+      const sin2Phi = Math.sin(2 * phi);
+      const Rp =
+        trig.cosRake * trig.sinDip * sinToff * sinToff * sin2Phi
+        - trig.cosRake * trig.cosDip * 2 * sinToff * cosToff * cosPhi
+        + trig.sinRake * trig.sin2Dip * (cosToff * cosToff - sinToff * sinToff * sinPhi * sinPhi)
+        + trig.sinRake * trig.cos2Dip * 2 * sinToff * cosToff * sinPhi;
+      return Rp >= 0 ? 1 : -1;
+    }
+    self.onmessage = function(e) {
+      const { reqId, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, compressColor } = e.data;
+      const trig = precomputeFaultTrig(strikeDeg, dipDeg, rakeDeg);
+      const mask = new Uint8ClampedArray(size * size); // 1 = 圧縮側（塗りつぶし）
+      for (let py = 0; py < size; py++) {
+        for (let px = 0; px < size; px++) {
+          const x = (px - cx) / R;
+          const y = -(py - cy) / R;
+          const rNorm = Math.sqrt(x * x + y * y);
+          if (rNorm > 1) continue;
+          const toff = 2 * Math.asin(Math.min(1, rNorm / Math.SQRT2)) * 180 / Math.PI;
+          const az = Math.atan2(x, y) * 180 / Math.PI;
+          if (pPolarityFast(trig, az, toff) > 0) mask[py * size + px] = 1;
+        }
+      }
+      self.postMessage({ reqId, mask }, [mask.buffer]);
+    };
+  `;
+  const blob = new Blob([workerSrc], { type: 'application/javascript' });
+  beachballWorker = new Worker(URL.createObjectURL(blob));
+  beachballWorker.onmessage = (e) => {
+    const { reqId, mask } = e.data;
+    const resolver = beachballWorkerPending.get(reqId);
+    if (resolver) {
+      beachballWorkerPending.delete(reqId);
+      resolver(mask);
+    }
+  };
+  beachballWorker.onerror = (err) => {
+    console.error('震源球描画Workerでエラー:', err);
+    // 保留中の全リクエストを失敗させ、呼び出し側の同期フォールバックに任せる
+    for (const resolver of beachballWorkerPending.values()) resolver(null);
+    beachballWorkerPending.clear();
+  };
+  return beachballWorker;
+}
+
+function computeBeachballMaskAsync(strikeDeg, dipDeg, rakeDeg, size, cx, cy, R) {
+  return new Promise((resolve) => {
+    try {
+      const worker = getBeachballWorker();
+      const reqId = ++beachballWorkerReqId;
+      beachballWorkerPending.set(reqId, resolve);
+      worker.postMessage({ reqId, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R });
+    } catch (e) {
+      // Worker生成自体に失敗した環境（file://実行時のBlob制限等）向けフォールバック
+      console.error('震源球描画Workerの初期化に失敗しました。同期描画にフォールバックします:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Worker結果（圧縮側マスク）とコンパス/PT軸ラベルを合成してcanvasに描画する共通処理。
+// synchronous版・async版の両方から呼ばれる。
+function paintBeachballCanvas(ctx, mask, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, colorCompress, colorTension) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = `rgb(${colorTension.join(',')})`;
+  ctx.fillRect(0, 0, size, size);
+
+  if (mask) {
+    const img = ctx.getImageData(0, 0, size, size);
+    const data = img.data;
+    for (let py = 0; py < size; py++) {
+      for (let px = 0; px < size; px++) {
+        if (!mask[py * size + px]) continue;
+        const idx = (py * size + px) * 4;
+        data[idx] = colorCompress[0]; data[idx + 1] = colorCompress[1]; data[idx + 2] = colorCompress[2]; data[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  } else {
+    // mask が無い（Worker不可）場合は同期計算にフォールバック
+    const trig = precomputeFaultTrig(strikeDeg, dipDeg, rakeDeg);
+    const img = ctx.getImageData(0, 0, size, size);
+    const data = img.data;
+    for (let py = 0; py < size; py++) {
+      for (let px = 0; px < size; px++) {
+        const x = (px - cx) / R;
+        const y = -(py - cy) / R;
+        const rNorm = Math.sqrt(x * x + y * y);
+        if (rNorm > 1) continue;
+        const toff = 2 * Math.asin(Math.min(1, rNorm / Math.SQRT2)) * 180 / Math.PI;
+        const az = Math.atan2(x, y) * 180 / Math.PI;
+        if (pPolarityFast(trig, az, toff) > 0) {
+          const idx = (py * size + px) * 4;
+          data[idx] = colorCompress[0]; data[idx + 1] = colorCompress[1]; data[idx + 2] = colorCompress[2]; data[idx + 3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  ctx.restore();
+}
+
+// 非同期版：Workerでピクセル判定を行い、メインスレッドは合成・ラベル描画のみ行う。
+// 呼び出し側は await して dataURL を受け取る。
+async function renderBeachballDataUrlAsync(strikeDeg, dipDeg, rakeDeg, size = 200) {
   const COLOR_COMPRESS = [142, 142, 142];
-  const COLOR_TENSION  = [255, 255, 255]; 
+  const COLOR_TENSION  = [255, 255, 255];
   const COLOR_BORDER   = '#b4b4b4';
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -1601,38 +1802,17 @@ function renderBeachballDataUrl(strikeDeg, dipDeg, rakeDeg, size = 200) {
   const labelMargin = size * 0.09;
   const R = size / 2 - 2 - labelMargin;
 
-  ctx.clearRect(0, 0, size, size);
-  ctx.save();
+  const mask = await computeBeachballMaskAsync(strikeDeg, dipDeg, rakeDeg, size, cx, cy, R);
+  paintBeachballCanvas(ctx, mask, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, COLOR_COMPRESS, COLOR_TENSION);
+
+  drawBeachballFrameAndLabels(ctx, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, labelMargin, COLOR_BORDER);
+  return canvas.toDataURL('image/png');
+}
+
+function drawBeachballFrameAndLabels(ctx, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, labelMargin, colorBorder) {
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-  ctx.fillStyle = `rgb(${COLOR_TENSION.join(',')})`;  
-  ctx.fillRect(0, 0, size, size);
-
-  const img = ctx.getImageData(0, 0, size, size);
-  const data = img.data;
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
-      const x = (px - cx) / R;   
-      const y = -(py - cy) / R;  
-      const rNorm = Math.sqrt(x * x + y * y);
-      if (rNorm > 1) continue;
-      const toff = 2 * Math.asin(Math.min(1, rNorm / Math.SQRT2)) * 180 / Math.PI;
-      const az = Math.atan2(x, y) * 180 / Math.PI; 
-      const pol = pPolarity(strikeDeg, dipDeg, rakeDeg, az, toff);
-      if (pol > 0) {
-        const idx = (py * size + px) * 4;
-        data[idx] = COLOR_COMPRESS[0]; data[idx + 1] = COLOR_COMPRESS[1]; data[idx + 2] = COLOR_COMPRESS[2]; data[idx + 3] = 255; 
-      }
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  ctx.restore();
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
-  ctx.strokeStyle = COLOR_BORDER;
+  ctx.strokeStyle = colorBorder;
   ctx.lineWidth = 1.8;
   ctx.stroke();
 
@@ -1668,19 +1848,93 @@ function renderBeachballDataUrl(strikeDeg, dipDeg, rakeDeg, size = 200) {
   const tIsDark = pPolarity(strikeDeg, dipDeg, rakeDeg, axes.T.az, axes.T.toff) > 0;
   drawAxisLabel('P', axes.P.az, axes.P.toff, pIsDark);
   drawAxisLabel('T', axes.T.az, axes.T.toff, tIsDark);
+}
+
+// 同期版（フォールバック・互換用に残置。Workerが使えない環境や即時描画が必要な場合に利用）
+// ピクセルループ自体は precomputeFaultTrig + pPolarityFast により高速化済み。
+function renderBeachballDataUrl(strikeDeg, dipDeg, rakeDeg, size = 200) {
+  const COLOR_COMPRESS = [142, 142, 142];
+  const COLOR_TENSION  = [255, 255, 255];
+  const COLOR_BORDER   = '#b4b4b4';
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2, cy = size / 2;
+  const labelMargin = size * 0.09;
+  const R = size / 2 - 2 - labelMargin;
+
+  ctx.clearRect(0, 0, size, size);
+  paintBeachballCanvas(ctx, null, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, COLOR_COMPRESS, COLOR_TENSION);
+  drawBeachballFrameAndLabels(ctx, strikeDeg, dipDeg, rakeDeg, size, cx, cy, R, labelMargin, COLOR_BORDER);
 
   return canvas.toDataURL('image/png');
 }
 
-function mechProxyUrl(targetUrl) {
-  return `https://r.jina.ai/${targetUrl}`;
+// JMAの発震機構解ページはCORS未対応（同一オリジンからの直接fetchが不可能）なため、
+// 第三者プロキシ経由での取得が必須になる。以前は r.jina.ai 単体に依存しており、
+// このサービスが停止・レート制限された瞬間に震源球タブ全体が使えなくなっていた。
+// ここでは複数の候補プロキシを順に試し、最初に成功したものを使うようにする。
+// （それでも「外部の無料プロキシに依存する」という根本的な脆さは残るため、
+//  全滅時にはJMA公式ページへの直接リンクを必ず提示する。）
+const MECH_PROXY_CANDIDATES = [
+  {
+    name: 'r.jina.ai',
+    build: (targetUrl) => `https://r.jina.ai/${targetUrl}`
+  },
+  {
+    name: 'allorigins',
+    build: (targetUrl) => `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
+  },
+  {
+    name: 'corsproxy.io',
+    build: (targetUrl) => `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`
+  }
+];
+
+// 直近に成功したプロキシを覚えておき、次回はそれを先頭から試すことで
+// 無駄な失敗リクエストを減らす（成功実績のあるプロキシを優先）。
+let lastWorkingMechProxyName = null;
+
+function orderedMechProxyCandidates() {
+  if (!lastWorkingMechProxyName) return MECH_PROXY_CANDIDATES;
+  const idx = MECH_PROXY_CANDIDATES.findIndex(p => p.name === lastWorkingMechProxyName);
+  if (idx <= 0) return MECH_PROXY_CANDIDATES;
+  return [MECH_PROXY_CANDIDATES[idx], ...MECH_PROXY_CANDIDATES.filter((_, i) => i !== idx)];
+}
+
+// 複数プロキシを順に試し、最初に成功したレスポンスのテキストを返す。
+// 全滅した場合は、どのプロキシが何のエラーで失敗したかをまとめた Error を投げる。
+async function fetchViaMechProxies(targetUrl) {
+  const candidates = orderedMechProxyCandidates();
+  const attempts = [];
+  for (const proxy of candidates) {
+    try {
+      const res = await fetch(proxy.build(targetUrl));
+      if (!res.ok) {
+        attempts.push(`${proxy.name}: HTTP ${res.status}`);
+        continue;
+      }
+      const text = await res.text();
+      if (!text || text.trim().length === 0) {
+        attempts.push(`${proxy.name}: 空レスポンス`);
+        continue;
+      }
+      lastWorkingMechProxyName = proxy.name;
+      return text;
+    } catch (e) {
+      // fetch自体の失敗（プロキシ側のCORS・ネットワークエラー等）
+      attempts.push(`${proxy.name}: ${e.message || 'ネットワークエラー'}`);
+    }
+  }
+  const err = new Error(`全プロキシで取得に失敗しました（${attempts.join(' / ')}）`);
+  err.mechProxyAttempts = attempts;
+  throw err;
 }
 
 async function fetchMechList() {
   const target = 'https://www.data.jma.go.jp/eew/data/mech/top.html';
-  const res = await fetch(mechProxyUrl(target));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
+  const text = await fetchViaMechProxies(target);
   return parseMechListText(text);
 }
 
@@ -1796,9 +2050,7 @@ function mechImageFallback(img) {
 }
 
 async function fetchMechDetail(url) {
-  const res = await fetch(mechProxyUrl(url));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
+  const text = await fetchViaMechProxies(url);
   return parseMechDetailText(text, url);
 }
 
@@ -1977,7 +2229,7 @@ function formatUsgsTime(timeMs) {
   return `${y}年${mo}月${day}日${h}時${mi}分頃`;
 }
 
-function buildUsgsDetail(feat, kind) {
+async function buildUsgsDetail(feat, kind) {
   const products = (feat.properties && feat.properties.products) || {};
   let prod = (products[kind] && products[kind][0]) || null;
   if (!prod && kind === 'moment-tensor') {
@@ -2003,10 +2255,12 @@ function buildUsgsDetail(feat, kind) {
   if (np1.strike != null || np2.strike != null) {
     detail.planes = [np1, np2];
     try {
-      detail.imageUrl = renderBeachballDataUrl(
+      // Worker経由で描画（メインスレッドをブロックしない）。Worker不可時は内部でフォールバック。
+      detail.imageUrl = await renderBeachballDataUrlAsync(
         parseFloat(np1.strike), parseFloat(np1.dip), parseFloat(np1.rake), 260
       );
     } catch (e) {
+      console.error('震源球画像の生成に失敗しました:', e);
       detail.imageUrl = null;
     }
   }
@@ -2317,19 +2571,31 @@ async function initMechView() {
   const jmaRows = jmaResult.status === 'fulfilled' ? jmaResult.value : [];
   const usgsRows = usgsResult.status === 'fulfilled' ? usgsResult.value : [];
 
-  if (jmaResult.status === 'rejected') console.error('JMA一覧取得失敗:', jmaResult.reason);
+  // JMA取得失敗時は「全プロキシがどう失敗したか」までコンソールに残す。
+  // r.jina.ai / allorigins / corsproxy.io のいずれかが仕様変更・レート制限で
+  // 落ちても、原因調査にすぐ辿り着けるようにするため。
+  if (jmaResult.status === 'rejected') {
+    console.error('JMA一覧取得失敗:', jmaResult.reason);
+    if (jmaResult.reason && jmaResult.reason.mechProxyAttempts) {
+      console.error('プロキシ試行内訳:', jmaResult.reason.mechProxyAttempts);
+    }
+  }
   if (usgsResult.status === 'rejected') console.error('USGS一覧取得失敗:', usgsResult.reason);
 
   const rows = mergeMechRows(jmaRows, usgsRows);
 
   if (rows.length === 0) {
+    const jmaDetail = (jmaResult.status === 'rejected' && jmaResult.reason && jmaResult.reason.mechProxyAttempts)
+      ? `<div style="font-size:10.5px; color:var(--text-2); margin-top:4px;">JMA取得の内訳： ${jmaResult.reason.mechProxyAttempts.join(' / ')}</div>`
+      : '';
     statusEl.innerHTML = `<span style="color:var(--danger);">データを取得できませんでした（JMA/USGSとも失敗、またはページ構造が変更された可能性があります）</span>
+      ${jmaDetail}
       <div style="margin-top:8px;"><a href="https://www.data.jma.go.jp/eew/data/mech/top.html" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">気象庁ページを直接開く ↗</a></div>`;
     return;
   }
 
   const mergedCount = rows.filter(r => r.mergedFrom).length;
-  const failNote = (jmaResult.status === 'rejected' ? 'JMA取得失敗 ' : '') + (usgsResult.status === 'rejected' ? 'USGS取得失敗' : '');
+  const failNote = (jmaResult.status === 'rejected' ? 'JMA取得失敗（代替プロキシも全滅） ' : '') + (usgsResult.status === 'rejected' ? 'USGS取得失敗' : '');
   statusEl.innerHTML = `${rows.length}件のイベントを取得（うちJMA・USGS統合 ${mergedCount}件）` + (failNote ? ` <span style="color:var(--danger);">／ ${failNote}</span>` : '');
   mechState.rows = rows;
   renderMechList();
