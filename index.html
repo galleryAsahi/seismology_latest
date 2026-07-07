@@ -900,7 +900,7 @@ function dayKey(dateObj) {
 // normalizeFeature() が期待する GeoJSON Feature 形状（properties / geometry）
 // に変換してから既存の正規化ロジックに通す。
 // ------------------------------------------------------------------
-const HYPO_ARCHIVE_URL = 'jma_hypocenters_2024-01-01_2025-12-31.json.zip';
+const HYPO_ARCHIVE_URL = 'jma_hypocenters.zip';
 const HYPO_ARCHIVE_CUTOFF_MS = Date.parse('2025-12-31T23:59:59+09:00');
 
 let hypoArchiveLoadPromise = null;
