@@ -893,17 +893,55 @@ function dayKey(dateObj) {
 }
 
 // ------------------------------------------------------------------
-// 静的アーカイブ（jma_hypocenters_2024-01-01_2025-12-31.json.gz）
-// 2025-12-31 23:59:59 以前のデータはすべてこのアーカイブJSONから読み込み、
+// 静的アーカイブ群
+// 以下の期間はすべて静的アーカイブ（改行区切りJSON＝NDJSON、.gz圧縮）から読み込み、
 // JMAの日別geojsonエンドポイントへのライブfetchは行わない。
-// レコード形式は {time, lat, lon, dep, mag, name} のフラット配列で、
+// レコード形式は {time, lat, lon, dep, mag, name} を1行1レコードで並べたNDJSONで、
 // normalizeFeature() が期待する GeoJSON Feature 形状（properties / geometry）
 // に変換してから既存の正規化ロジックに通す。
+//
+// 各アーカイブの startMs/endMs はファイル名ではなく中身の実データで判定するべき
+// （過去にファイル名の年代表記と中身が食い違っていた事故があったため、
+//  ここでは実際にカバーする日付範囲を明示的に持たせている）。
 // ------------------------------------------------------------------
-const HYPO_ARCHIVE_URL = 'jma_hypocenters.json.gz';
-const HYPO_ARCHIVE_CUTOFF_MS = Date.parse('2025-12-31T23:59:59+09:00');
+// このアプリは日本国内での利用を前提とし、期間指定UIやdayKey()は
+// すべて「ブラウザのローカルタイムゾーン＝JST」という前提でnew Date(y,m,d)を使っている。
+// アーカイブの境界もこれに合わせてローカルTZ基準のnew Date(y,m,d,...)で定義することで、
+// 一部環境（JST以外のOS設定やNode.jsでのテスト実行）でのタイムゾーン二重変換によるズレを防ぐ。
+const HYPO_ARCHIVES = [
+  {
+    url: 'jma_hypocenters.json.gz',
+    startMs: new Date(2024, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(2025, 11, 31, 23, 59, 59, 999).getTime()
+  },
+  {
+    url: 'jma_hypocenters_2023-2019.gz',
+    startMs: new Date(2019, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(2023, 11, 31, 23, 59, 59, 999).getTime()
+  },
+  {
+    url: 'jma_hypocenters_2018-2013.gz',
+    startMs: new Date(2013, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(2018, 11, 31, 23, 59, 59, 999).getTime()
+  },
+  {
+    url: 'jma_hypocenters_2012-2005.gz',
+    startMs: new Date(2005, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(2012, 11, 31, 23, 59, 59, 999).getTime()
+  },
+  {
+    url: 'jma_hypocenters_2004-1998.gz',
+    startMs: new Date(1998, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(2004, 11, 31, 23, 59, 59, 999).getTime()
+  }
+];
 
-let hypoArchiveLoadPromise = null;
+// 全アーカイブの中で最も新しい終端（このタイムスタンプ以前は必ずどれかのアーカイブでカバーされる）
+const HYPO_ARCHIVE_CUTOFF_MS = Math.max(...HYPO_ARCHIVES.map(a => a.endMs));
+// 全アーカイブの中で最も古い開始（これより前は静的アーカイブ非対応）
+const HYPO_ARCHIVE_MIN_MS = Math.min(...HYPO_ARCHIVES.map(a => a.startMs));
+
+const hypoArchiveLoadPromises = new Map(); // url -> Promise
 
 function archiveRecordToFeature(rec) {
   return {
@@ -918,27 +956,48 @@ function archiveRecordToFeature(rec) {
   };
 }
 
-async function loadHypoArchive() {
-  if (hypoArchiveLoadPromise) return hypoArchiveLoadPromise;
-  hypoArchiveLoadPromise = (async () => {
-    await loadEpinameData();
-    const res = await fetch(HYPO_ARCHIVE_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status} @ ${HYPO_ARCHIVE_URL}`);
+// NDJSON（1行1レコード）を優先してパースし、ダメなら単一JSON配列としてフォールバックする。
+function parseHypoArchiveText(text) {
+  const trimmed = text.trim();
+  // 先頭が '[' なら単一JSON配列とみなす
+  if (trimmed.startsWith('[')) {
+    return JSON.parse(trimmed);
+  }
+  // それ以外はNDJSONとして1行ずつパースする（空行はスキップ、壊れた行は無視して継続）
+  const records = [];
+  const lines = trimmed.split('\n');
+  for (const line of lines) {
+    const l = line.trim();
+    if (!l) continue;
+    try {
+      records.push(JSON.parse(l));
+    } catch (e) {
+      // 壊れた行はスキップして続行（アーカイブ全体を無効化しない）
+      console.warn('アーカイブ行のパースに失敗（スキップ）:', l.slice(0, 100), e);
+    }
+  }
+  return records;
+}
+
+async function loadHypoArchiveFile(archive) {
+  if (hypoArchiveLoadPromises.has(archive.url)) return hypoArchiveLoadPromises.get(archive.url);
+  const promise = (async () => {
+    const res = await fetch(archive.url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} @ ${archive.url}`);
 
     // .gz は DecompressionStream('gzip') でその場に解凍する（追加ライブラリ不要）。
-    // 非対応ブラウザ向けに、解凍済みの生JSONが返ってきた場合のフォールバックも用意する。
-    let records;
+    // 非対応ブラウザ向けに、解凍済みの生テキストが返ってきた場合のフォールバックも用意する。
+    let text;
     const ab = await res.arrayBuffer();
     try {
       const ds = new DecompressionStream('gzip');
       const stream = new Blob([ab]).stream().pipeThrough(ds);
-      const text = await new Response(stream).text();
-      records = JSON.parse(text);
+      text = await new Response(stream).text();
     } catch (e) {
-      // DecompressionStream非対応、またはgzipでなかった場合はそのままJSONとして読む
-      const text = new TextDecoder('utf-8').decode(ab);
-      records = JSON.parse(text);
+      text = new TextDecoder('utf-8').decode(ab);
     }
+
+    const records = parseHypoArchiveText(text);
 
     // 日付ごとにグルーピングしてhypoDayCacheへ事前投入する
     const byDay = new Map();
@@ -953,24 +1012,32 @@ async function loadHypoArchive() {
     for (const [key, feats] of byDay) {
       hypoDayCache.set(key, { features: feats, error: null });
     }
-    console.log(`アーカイブ読み込み完了: ${records.length}件 / ${byDay.size}日分`);
+    console.log(`アーカイブ読み込み完了 (${archive.url}): ${records.length}件 / ${byDay.size}日分`);
     return byDay;
   })();
-  return hypoArchiveLoadPromise;
+  hypoArchiveLoadPromises.set(archive.url, promise);
+  return promise;
+}
+
+function archiveForDate(dateObj) {
+  // 境界（HYPO_ARCHIVES の startMs/endMs）もローカルTZ基準で定義しているため、
+  // ここも同じくローカルTZの年月日でその日の開始・終了瞬間を求める。
+  const y = dateObj.getFullYear(), mo = dateObj.getMonth(), d = dateObj.getDate();
+  const startOfDay = new Date(y, mo, d, 0, 0, 0, 0).getTime();
+  const endOfDay = new Date(y, mo, d, 23, 59, 59, 999).getTime();
+  return HYPO_ARCHIVES.find(a => startOfDay >= a.startMs && endOfDay <= a.endMs) || null;
 }
 
 function isArchiveCoveredDate(dateObj) {
-  // その日の最後の瞬間（23:59:59.999）がアーカイブのカットオフ以前なら、
-  // その日一日分は丸ごとアーカイブでカバーされている。
-  const endOfDay = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 23, 59, 59, 999);
-  return endOfDay.getTime() <= HYPO_ARCHIVE_CUTOFF_MS;
+  return archiveForDate(dateObj) != null;
 }
 
 async function fetchHypoDay(dateObj, { signal } = {}) {
   await loadEpinameData();
 
-  if (isArchiveCoveredDate(dateObj)) {
-    await loadHypoArchive();
+  const archive = archiveForDate(dateObj);
+  if (archive) {
+    await loadHypoArchiveFile(archive);
     const cached = hypoDayCache.get(dayKey(dateObj));
     return cached ? cached.features : [];
   }
@@ -1574,14 +1641,15 @@ function buildBvaluePanel() {
       <label class="field-label">Mc（マグニチュード完全性閾値）</label>
       <div class="row">
         <select id="bv-mc-mode" style="flex:1.2;">
-          <option value="auto">自動推定（最大曲率法）</option>
+          <option value="max-curvature" selected>自動推定（最大曲率法）</option>
+          <option value="auto">自動推定（GFT法）</option>
           <option value="manual">手動指定</option>
         </select>
         <input type="number" id="bv-mc-manual" step="0.1" value="2.0" style="display:none; width:70px;">
       </div>
       <div style="height:14px;"></div>
       <div id="bv-result" class="font-num" style="font-family:var(--font-base); font-size:12.5px; line-height:1.9; color:var(--text-1);">
-        地図上で解析対象領域を選択してください
+        地図上で解析対象領域を選択
       </div>
     </div>
   `;
@@ -1650,6 +1718,69 @@ function estimateMcMaxCurvature(mags, binWidth = 0.1) {
   return bestM;
 }
 
+// Goodness-of-Fit Test (Wiemer & Wyss, 2000) によるMc推定。
+// 候補Mcを低い方から走査し、観測累積分布とGR則から予測される累積分布の
+// 適合度R(%)が閾値(まず95%を狙い、ダメなら90%）を満たす最小Mcを採用する。
+// どの候補も基準を満たさない場合は最大曲率法にフォールバックする。
+function estimateMcGFT(mags, binWidth = 0.1) {
+  if (mags.length === 0) return { mc: null, method: 'none' };
+
+  const rounded = mags.map(m => Math.round(m / binWidth) * binWidth);
+  const minM = Math.min(...rounded);
+  const maxM = Math.max(...rounded);
+  const nBins = Math.round((maxM - minM) / binWidth) + 1;
+  const mcMaxCurv = estimateMcMaxCurvature(mags, binWidth);
+  if (nBins < 3) {
+    return { mc: mcMaxCurv, method: 'max-curvature' };
+  }
+
+  const tryThreshold = (targetR) => {
+    // Wiemer & Wyss (2000) の標準的な運用に合わせ、最大曲率法のMcより
+    // 低い候補は未検出域（ロールオフ）とみなして探索対象から除外する。
+    // これにより低M側の小標本での偶然の高R%を誤採用するのを防ぐ。
+    const searchStart = Math.max(minM, mcMaxCurv != null ? mcMaxCurv : minM);
+    for (let m = searchStart; m <= maxM + 1e-9; m += binWidth) {
+      const mcCand = Math.round(m / binWidth) * binWidth;
+      const sample = mags.filter(x => x >= mcCand - 1e-9);
+      const n = sample.length;
+      if (n < 10) continue; // GFT自体、最低限のサンプルがないと無意味
+
+      const meanM = sample.reduce((a, b) => a + b, 0) / n;
+      const b = Math.LOG10E / (meanM - (mcCand - binWidth / 2));
+      if (!isFinite(b) || b <= 0) continue;
+      const a = Math.log10(n) + b * mcCand;
+
+      // 観測累積度数 vs GR則予測累積度数 を mcCand以上のビンで比較
+      let sumAbsDiff = 0, sumObs = 0;
+      for (let mm = mcCand; mm <= maxM + 1e-9; mm += binWidth) {
+        const mBin = Math.round(mm / binWidth) * binWidth;
+        const obsCumulative = sample.filter(x => x >= mBin - 1e-9).length;
+        const predCumulative = Math.pow(10, a - b * mBin);
+        sumAbsDiff += Math.abs(obsCumulative - predCumulative);
+        sumObs += obsCumulative;
+      }
+      if (sumObs === 0) continue;
+      const R = 100 * (1 - sumAbsDiff / sumObs);
+      if (R >= targetR) {
+        return mcCand;
+      }
+    }
+    return null;
+  };
+
+  let mc = tryThreshold(95);
+  let method = 'gft-95';
+  if (mc == null) {
+    mc = tryThreshold(90);
+    method = 'gft-90';
+  }
+  if (mc == null) {
+    mc = mcMaxCurv;
+    method = 'max-curvature';
+  }
+  return { mc, method };
+}
+
 function computeBvalueAki(mags, mc, binWidth = 0.1) {
   const sample = mags.filter(m => m >= mc - 1e-9);
   const n = sample.length;
@@ -1659,6 +1790,35 @@ function computeBvalueAki(mags, mc, binWidth = 0.1) {
   const variance = sample.reduce((acc, m) => acc + Math.pow(m - meanM, 2), 0) / (n * (n - 1));
   const stdErr = 2.30 * Math.sqrt(variance) * b * b;
   return { b, n, stdErr, meanM };
+}
+
+// n（Mc以上のサンプル数）とb値そのものの妥当性から信頼度ラベルを決める。
+// 段階的に: n<10=信頼性低, n<20=参考値, n<30=やや少なめ, それ以上=十分。
+// bが物理的にありえない範囲(0.3未満 or 3.0超)の場合は常に警告を強める。
+function assessBvalueReliability(n, b) {
+  const bAbnormal = (b < 0.3 || b > 3.0);
+
+  let level, label;
+  if (n < 10) {
+    level = 'danger';
+    label = `信頼性低（n=${n}件）`;
+  } else if (n < 20) {
+    level = 'warn';
+    label = `参考値（n=${n}件・やや少数）`;
+  } else if (n < 30) {
+    level = 'caution';
+    label = `n=${n}件（もう少しデータがあると安定）`;
+  } else {
+    level = 'ok';
+    label = null;
+  }
+
+  if (bAbnormal) {
+    level = 'danger';
+    label = `b値が信頼できない数値です`;
+  }
+
+  return { level, label };
 }
 
 function computeAndRenderBvalue() {
@@ -1674,7 +1834,7 @@ function computeAndRenderBvalueInner() {
   if (!resultEl) return;
 
   if (!bvalueState.bbox) {
-    resultEl.innerHTML = `<span style="color:var(--text-2);">地図上で解析対象領域を選択してください</span>`;
+    resultEl.innerHTML = `<span style="color:var(--text-2);">地図上で解析対象領域を選択</span>`;
     return;
   }
 
@@ -1688,10 +1848,24 @@ function computeAndRenderBvalueInner() {
 
   const mcMode = document.getElementById('bv-mc-mode').value;
   let mc;
+  let mcMethodNote = '';
   if (mcMode === 'manual') {
     mc = parseFloat(document.getElementById('bv-mc-manual').value) || 2.0;
-  } else {
+  } else if (mcMode === 'max-curvature') {
     mc = estimateMcMaxCurvature(mags);
+  } else {
+    const gft = estimateMcGFT(mags);
+    mc = gft.mc;
+    if (gft.method === 'max-curvature') {
+      mcMethodNote = '<br><span style="color:var(--text-2); font-size:11px; word-break:keep-all; overflow-wrap:break-word;">曲率法にフォールバック</span>';
+    } else if (gft.method === 'gft-90') {
+      mcMethodNote = '<br><span style="color:var(--text-2); font-size:11px; word-break:keep-all; overflow-wrap:break-word;">GFT適合度90%基準を採用（95%未達）</span>';
+    }
+  }
+
+  if (mc == null) {
+    resultEl.innerHTML = `Mcの推定に失敗しました`;
+    return;
   }
 
   const { b, n, stdErr, meanM } = computeBvalueAki(mags, mc);
@@ -1702,14 +1876,27 @@ function computeAndRenderBvalueInner() {
   }
 
   const aValue = Math.log10(n) + b * mc;
+  const reliability = assessBvalueReliability(n, b);
+
+  const levelColor = {
+    danger: 'var(--danger)',
+    warn: 'var(--accent)',
+    caution: 'var(--text-2)',
+    ok: 'var(--text-2)'
+  }[reliability.level];
+
+  const warningHtml = reliability.label
+    ? `<div style="margin-top:6px; padding:6px 8px; border-radius:6px; background:rgba(255,255,255,0.04); border:1px solid ${levelColor}; color:${levelColor}; font-size:11.5px; line-height:1.5;">${reliability.label}</div>`
+    : '';
 
   resultEl.innerHTML = `
     <div class="font-num" style="font-size:26px; font-weight:800; color:var(--accent); font-family:var(--font-base);">
       b = ${b.toFixed(3)} <span style="font-size:13px; color:var(--text-2); font-weight:400;">± ${stdErr.toFixed(3)}</span>
     </div>
+    ${warningHtml}
     <div class="divider" style="margin:8px 0;"></div>
     総地震数（選択領域）: ${mags.length}<br>
-    Mc（完全性閾値）: ${mc.toFixed(1)}<br>
+    Mc（完全性閾値）: ${mc.toFixed(1)}${mcMethodNote}<br>
     解析対象数（M≥Mc）: ${n}<br>
     平均M: ${meanM.toFixed(2)}<br>
     a値（推定）: ${aValue.toFixed(2)}
@@ -2745,8 +2932,7 @@ async function initMechView() {
   renderMechList();
 }
 
-loadEpinameData(); 
-loadHypoArchive();
+loadEpinameData();
 initSharedMap();
 initMechView();
 
