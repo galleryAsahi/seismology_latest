@@ -892,9 +892,90 @@ function dayKey(dateObj) {
   return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(dateObj.getDate())}`;
 }
 
+// ------------------------------------------------------------------
+// 静的アーカイブ（jma_hypocenters_2024-01-01_2025-12-31.json.gz）
+// 2025-12-31 23:59:59 以前のデータはすべてこのアーカイブJSONから読み込み、
+// JMAの日別geojsonエンドポイントへのライブfetchは行わない。
+// レコード形式は {time, lat, lon, dep, mag, name} のフラット配列で、
+// normalizeFeature() が期待する GeoJSON Feature 形状（properties / geometry）
+// に変換してから既存の正規化ロジックに通す。
+// ------------------------------------------------------------------
+const HYPO_ARCHIVE_URL = 'jma_hypocenters_2024-01-01_2025-12-31.json.zip';
+const HYPO_ARCHIVE_CUTOFF_MS = Date.parse('2025-12-31T23:59:59+09:00');
+
+let hypoArchiveLoadPromise = null;
+
+function archiveRecordToFeature(rec) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [rec.lon, rec.lat, rec.dep] },
+    properties: {
+      time: rec.time,
+      mag: rec.mag,
+      name: rec.name,
+      dep: rec.dep
+    }
+  };
+}
+
+async function loadHypoArchive() {
+  if (hypoArchiveLoadPromise) return hypoArchiveLoadPromise;
+  hypoArchiveLoadPromise = (async () => {
+    await loadEpinameData();
+    const res = await fetch(HYPO_ARCHIVE_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status} @ ${HYPO_ARCHIVE_URL}`);
+
+    // .gz は DecompressionStream('gzip') でその場に解凍する（追加ライブラリ不要）。
+    // 非対応ブラウザ向けに、解凍済みの生JSONが返ってきた場合のフォールバックも用意する。
+    let records;
+    const ab = await res.arrayBuffer();
+    try {
+      const ds = new DecompressionStream('gzip');
+      const stream = new Blob([ab]).stream().pipeThrough(ds);
+      const text = await new Response(stream).text();
+      records = JSON.parse(text);
+    } catch (e) {
+      // DecompressionStream非対応、またはgzipでなかった場合はそのままJSONとして読む
+      const text = new TextDecoder('utf-8').decode(ab);
+      records = JSON.parse(text);
+    }
+
+    // 日付ごとにグルーピングしてhypoDayCacheへ事前投入する
+    const byDay = new Map();
+    for (const rec of records) {
+      const feat = normalizeFeature(archiveRecordToFeature(rec));
+      if (feat.lon == null || feat.lat == null) continue;
+      // "YYYY/MM/DD HH:MM:SS" の先頭10文字 → "YYYY/MM/DD" → "YYYY-MM-DD"
+      const key = String(rec.time).slice(0, 10).replace(/\//g, '-');
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(feat);
+    }
+    for (const [key, feats] of byDay) {
+      hypoDayCache.set(key, { features: feats, error: null });
+    }
+    console.log(`アーカイブ読み込み完了: ${records.length}件 / ${byDay.size}日分`);
+    return byDay;
+  })();
+  return hypoArchiveLoadPromise;
+}
+
+function isArchiveCoveredDate(dateObj) {
+  // その日の最後の瞬間（23:59:59.999）がアーカイブのカットオフ以前なら、
+  // その日一日分は丸ごとアーカイブでカバーされている。
+  const endOfDay = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 23, 59, 59, 999);
+  return endOfDay.getTime() <= HYPO_ARCHIVE_CUTOFF_MS;
+}
+
 async function fetchHypoDay(dateObj, { signal } = {}) {
-  const url = hypoUrlFor(dateObj);
   await loadEpinameData();
+
+  if (isArchiveCoveredDate(dateObj)) {
+    await loadHypoArchive();
+    const cached = hypoDayCache.get(dayKey(dateObj));
+    return cached ? cached.features : [];
+  }
+
+  const url = hypoUrlFor(dateObj);
   const res = await fetch(url, { signal, mode: 'cors' });
   if (!res.ok) throw new Error(`HTTP ${res.status} @ ${url}`);
   const gj = await res.json();
@@ -1304,7 +1385,10 @@ async function runSharedFetchInner() {
 
   const dates = dateRange(startStr, endStr);
   if (dates.length === 0) { toast('日付範囲が不正です'); return; }
-  if (dates.length > 92) { toast('一度に取得できるのは最大92日分です'); return; }
+  // 92日上限はJMAへのライブfetch負荷を抑えるためのものなので、
+  // 全期間がアーカイブ（〜2025-12-31 23:59:59）でカバーされる場合は適用しない。
+  const allArchiveCovered = dates.every(isArchiveCoveredDate);
+  if (!allArchiveCovered && dates.length > 92) { toast('一度に取得できるのは最大92日分です'); return; }
 
   if (sharedDateRange.rawFeatures && sharedDateRange.startDate === startStr && sharedDateRange.endDate === endStr) {
     applySharedFeatures(sharedDateRange.rawFeatures);
@@ -2662,6 +2746,7 @@ async function initMechView() {
 }
 
 loadEpinameData(); 
+loadHypoArchive();
 initSharedMap();
 initMechView();
 
