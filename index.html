@@ -591,7 +591,8 @@ function lookupEpicenterName(lon, lat) {
     const mid = (loI + hiI) >> 1;
     if (entries[mid][0] <= lonKeyF) { idx = mid; loI = mid + 1; } else { hiI = mid - 1; }
   }
-  if (idx < 0) idx = 0;
+  // lonKeyF が全エントリの最小経度より小さい場合、範囲外なのでフォールバックせず null を返す
+  if (idx < 0) return null;
   const nameIdx = entries[idx][1];
   return epinameNames[nameIdx] || null;
 }
@@ -863,7 +864,7 @@ function normalizeFeature(feature) {
   const timeRaw = pickProp(p, ['time', 'origin_time', 'at', 'date'], null);
   const placeRaw = pickProp(p, ['place', 'epi', 'region', 'name'], null);
   const placeByCoord = lookupEpicenterName(lon, lat);
-  const place = placeByCoord || placeRaw || '不明';
+  const place = placeByCoord || placeRaw || (lon != null && lat != null && !isNaN(lon) && !isNaN(lat) ? '遠地地震' : '不明');
   const maxInt = pickProp(p, ['maxInt', 'max_int', 'maxi', 'intensity'], null);
 
   const timeMs = parseTimeRobust(timeRaw);
