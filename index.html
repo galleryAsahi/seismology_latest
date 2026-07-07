@@ -68,11 +68,9 @@ html,body{
   display:flex; flex-direction:column; gap:4px;
   padding:6px;
   border-radius:20px;
-  background:rgba(20,22,28,0.55);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  border:1px solid var(--glass-border-strong);
-  box-shadow:0 10px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+  background:#0d0e12;
+  border:1px solid rgba(255,255,255,0.14);
+  box-shadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 .tab-btn{
   display:flex; flex-direction:row; align-items:center; gap:8px;
@@ -1568,7 +1566,7 @@ function setupBboxDrawing() {
     startLngLat = null;
     bvalueState.drawing = false;
     const btn = document.getElementById('bv-draw-btn');
-    if (btn) { btn.classList.remove('btn-accent'); btn.textContent = '領域を選択'; }
+    if (btn) { btn.classList.remove('btn-accent'); btn.textContent = '領域選択'; }
     sharedMap.getCanvas().style.cursor = '';
   }
 
@@ -1616,8 +1614,8 @@ function buildBvaluePanel() {
   panel.innerHTML = `
     <div class="panel-title"><span class="bar"></span>解析対象領域</div>
     <div class="row">
-      <button class="btn btn-sm" id="bv-draw-btn">領域を選択</button>
-      <button class="btn btn-sm" id="bv-clear-btn">クリア</button>
+      <button class="btn btn-sm" id="bv-draw-btn" style="white-space:nowrap;">領域選択</button>
+      <button class="btn btn-sm" id="bv-clear-btn" style="white-space:nowrap;">クリア</button>
     </div>
     <div style="height:6px;"></div>
     <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base);">未選択</div>
@@ -1670,7 +1668,7 @@ function buildBvaluePanel() {
     bvalueState.drawing = !bvalueState.drawing;
     const btn = document.getElementById('bv-draw-btn');
     btn.classList.toggle('btn-accent', bvalueState.drawing);
-    btn.textContent = bvalueState.drawing ? '1点目クリック' : '領域を選択';
+    btn.textContent = bvalueState.drawing ? '1点目クリック' : '領域選択';
     if (bvalueState._onDrawModeChanged) bvalueState._onDrawModeChanged(bvalueState.drawing);
   });
   
