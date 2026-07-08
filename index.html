@@ -112,7 +112,7 @@ html,body{
 
 .floating-panel{
   position:absolute;
-  z-index:40;
+  z-index:70;
   padding:16px;
 }
 .floating-panel.glass-panel{
@@ -497,6 +497,9 @@ let epinameNames = null;
 let epinameSortedLatKeys = null;
 let epinameLoadPromise = null;
 
+let teichiRegions = null; // 遠地(海外)区分ポリゴン: [{id, name, polygons: [[[lon,lat],...], ...]}]
+let teichiLoadPromise = null;
+
 function parseEpinameData() {
   const rawNames = window.EPINAME_LIST;
   const rawGrid = window.EPINAME_GRID_RAW;
@@ -554,6 +557,60 @@ function loadScriptOnce(src) {
     el.onerror = reject;
     document.head.appendChild(el);
   });
+}
+
+// 遠地(海外)区分ポリゴンの読み込み (出典: 0Quake/JMA_Region, CC0 / 気象庁「地震情報で用いる震央地名」別紙３準拠)
+async function loadTeichiRegions() {
+  if (teichiLoadPromise) return teichiLoadPromise;
+  teichiLoadPromise = (async () => {
+    try {
+      const res = await fetch('hypocenter_data.json');
+      const geojson = await res.json();
+      teichiRegions = geojson.features.map(f => {
+        const geom = f.geometry;
+        // Polygon: [ring, ...], MultiPolygon: [polygon, ...] = [[ring,...],...]
+        const polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+        return { id: f.properties.id, name: f.properties.name, polygons };
+      });
+    } catch (e) {
+      console.error('遠地震央地名データの読み込みに失敗しました:', e);
+    }
+  })();
+  return teichiLoadPromise;
+}
+
+// レイシャスティング法による点内判定 (1つのポリゴン=リング配列 [外周, 穴1, 穴2, ...])
+function pointInRing(lon, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInPolygon(lon, lat, rings) {
+  // rings[0]が外周、rings[1+]が穴。外周に入っていて、どの穴にも入っていなければtrue
+  if (!pointInRing(lon, lat, rings[0])) return false;
+  for (let k = 1; k < rings.length; k++) {
+    if (pointInRing(lon, lat, rings[k])) return false;
+  }
+  return true;
+}
+
+function lookupTeichiName(lon, lat) {
+  if (!teichiRegions) return null;
+  // データは経度0〜360度表記のため、-180〜180形式の入力を正規化する
+  const lon360 = ((lon % 360) + 360) % 360;
+  for (const region of teichiRegions) {
+    for (const poly of region.polygons) {
+      if (pointInPolygon(lon360, lat, poly)) return region.name;
+    }
+  }
+  return null;
 }
 
 function nearestIndexSorted(sortedArr, value) {
@@ -863,7 +920,7 @@ function normalizeFeature(feature) {
   const mag = Number(pickProp(p, ['mag', 'magnitude', 'Magunitude', 'M'], NaN));
   const timeRaw = pickProp(p, ['time', 'origin_time', 'at', 'date'], null);
   const placeRaw = pickProp(p, ['place', 'epi', 'region', 'name'], null);
-  const placeByCoord = lookupEpicenterName(lon, lat);
+  const placeByCoord = lookupEpicenterName(lon, lat) || lookupTeichiName(lon, lat);
   const place = placeByCoord || placeRaw || (lon != null && lat != null && !isNaN(lon) && !isNaN(lat) ? '遠地地震' : '不明');
   const maxInt = pickProp(p, ['maxInt', 'max_int', 'maxi', 'intensity'], null);
 
@@ -932,6 +989,12 @@ const HYPO_ARCHIVES = [
     url: 'jma_hypocenters_2004-1998.gz',
     startMs: new Date(1998, 0, 1, 0, 0, 0, 0).getTime(),
     endMs: new Date(2004, 11, 31, 23, 59, 59, 999).getTime()
+  },
+  {
+    // 1919/01/01〜1997/12/31分（jma_hypocenters_2004-1998.gzとの重複なし）
+    url: 'jma_hypocenters_1997-1919.gz',
+    startMs: new Date(1919, 0, 1, 0, 0, 0, 0).getTime(),
+    endMs: new Date(1997, 11, 31, 23, 59, 59, 999).getTime()
   }
 ];
 
@@ -1032,7 +1095,7 @@ function isArchiveCoveredDate(dateObj) {
 }
 
 async function fetchHypoDay(dateObj, { signal } = {}) {
-  await loadEpinameData();
+  await Promise.all([loadEpinameData(), loadTeichiRegions()]);
 
   const archive = archiveForDate(dateObj);
   if (archive) {
@@ -1241,7 +1304,10 @@ async function loadPlateBoundaryLayer(plateDataPromise) {
 function formatPopupTime(rawTimeProp, rawTimeDebugStr) {
   const t = Number(rawTimeProp);
 
-  if (rawTimeProp == null || isNaN(t) || t < 0) {
+  // 「時刻不明」はセンチネル値 -1 のみで表す。1970年より前（epoch msが負）の
+  // 正当な地震時刻も存在する（JMAの震源データは1919年分まで遡るため）ので、
+  // "t < 0" のような広い条件で弾くと、それらまで「時刻不明」誤判定してしまう。
+  if (rawTimeProp == null || isNaN(t) || t === -1) {
     // -1（センチネル値）、未定義、非数値のいずれか＝時刻を特定できなかったケース
     return `<span style="color:var(--text-2);">時刻不明</span>` + debugTimeHint(rawTimeDebugStr);
   }
@@ -1403,6 +1469,20 @@ window.addEventListener('resize', () => {
   responsiveLayoutResizeTimer = setTimeout(applyResponsivePanelLayout, 120);
 });
 
+// ステータステキストの折返し行数変化など、ウィンドウリサイズを伴わない
+// パネル高さの変化でも縦積み位置がズレないよう、各パネルの高さ変化を監視して
+// 常に再スタックする。（"◯件取得完了"のように文言長で行数が変わるケースの対策）
+let panelRestackTimer = null;
+const panelResizeObserver = new ResizeObserver(() => {
+  if (!isMobileLayout()) return;
+  clearTimeout(panelRestackTimer);
+  // 複数パネルが同時に変化しても1回にまとめる
+  panelRestackTimer = setTimeout(applyResponsivePanelLayout, 0);
+});
+function observePanelForRestack(panel) {
+  panelResizeObserver.observe(panel);
+}
+
 function buildSharedDatePanel() {
   const container = document.getElementById('shared-date-panel-root');
   const panel = document.createElement('div');
@@ -1423,6 +1503,7 @@ function buildSharedDatePanel() {
     <div class="status-text" id="shared-date-status">待機中</div>
   `;
   container.appendChild(panel);
+  observePanelForRestack(panel);
 
   bindDateField('shared-date-start');
   bindDateField('shared-date-end');
@@ -1522,6 +1603,7 @@ function buildEpicenterPanel() {
     </div>
   `;
   container.appendChild(panel);
+  observePanelForRestack(panel);
 
   const legendBody = panel.querySelector('#epi-legend-body');
   const legendCaret = panel.querySelector('#epi-legend-caret');
@@ -1622,6 +1704,7 @@ function buildBvaluePanel() {
     <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base);">未選択</div>
   `;
   container.appendChild(panel);
+  observePanelForRestack(panel);
 
   const resultPanel = document.createElement('div');
   resultPanel.id = 'bv-result-panel';
@@ -1653,6 +1736,7 @@ function buildBvaluePanel() {
     </div>
   `;
   container.appendChild(resultPanel);
+  observePanelForRestack(resultPanel);
 
   const bvResultBody = resultPanel.querySelector('#bv-result-body');
   const bvResultCaret = resultPanel.querySelector('#bv-result-caret');
@@ -2932,6 +3016,7 @@ async function initMechView() {
 }
 
 loadEpinameData();
+loadTeichiRegions();
 initSharedMap();
 initMechView();
 
