@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>震析 SHIN-SEKI | 地震学解析ツール</title>
+<title>震析 | 地震学解析ツール</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -193,6 +193,15 @@ input[type="number"]:focus, select:focus{
 }
 .date-seg.seg-y{ width:4.2ch; }
 .date-seg.seg-m, .date-seg.seg-d{ width:2.2ch; }
+.date-seg.seg-hh, .date-seg.seg-mm{ width:2.2ch; }
+.date-time-sep{
+  display:inline-flex;
+  align-items:center;
+  height:100%;
+  color:rgba(255,255,255,0.3);
+  margin:0 1px;
+  user-select:none;
+}
 .date-sep{
   display:inline-flex;
   align-items:center;
@@ -361,6 +370,8 @@ select option{
 .floating-panel.mobile-stacked .date-seg.seg-y{ width:4.4ch !important; }
 .floating-panel.mobile-stacked .date-seg.seg-m,
 .floating-panel.mobile-stacked .date-seg.seg-d{ width:2.4ch !important; }
+.floating-panel.mobile-stacked .date-seg.seg-hh,
+.floating-panel.mobile-stacked .date-seg.seg-mm{ width:2.4ch !important; }
 .floating-panel.mobile-stacked input[type="number"],
 .floating-panel.mobile-stacked select{
   padding:6px 8px !important;
@@ -768,6 +779,143 @@ function getDateFieldValue(id) {
   return el ? el.value : '';
 }
 
+// --- 日時（YYYY/MM/DD HH:MM）を1行にまとめた入力フィールド ---
+// hiddenの値は "YYYY-MM-DDTHH:MM" 形式で保持する。
+function createDateTimeFieldHTML(id, isoDate, hhmm) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate || '');
+  const y = m ? m[1] : '';
+  const mo = m ? m[2] : '';
+  const d = m ? m[3] : '';
+  const tm = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+  const hh = tm ? tm[1] : '';
+  const mm = tm ? tm[2] : '';
+  const todayIso = defaultDateStr(0);
+  const combined = (isoDate && hhmm) ? `${isoDate}T${hhmm}` : '';
+  return `
+    <div class="date-field" data-datetime-field-id="${id}">
+      <input type="hidden" id="${id}" value="${combined}">
+      <input class="date-seg seg-y" type="text" inputmode="numeric" maxlength="4" placeholder="年" data-seg="y" value="${y}">
+      <span class="date-sep">/</span>
+      <input class="date-seg seg-m" type="text" inputmode="numeric" maxlength="2" placeholder="月" data-seg="m" value="${mo}">
+      <span class="date-sep">/</span>
+      <input class="date-seg seg-d" type="text" inputmode="numeric" maxlength="2" placeholder="日" data-seg="d" value="${d}">
+      <span class="date-time-sep">&nbsp;</span>
+      <input class="date-seg seg-hh" type="text" inputmode="numeric" maxlength="2" placeholder="時" data-seg="hh" value="${hh}">
+      <span class="date-sep">:</span>
+      <input class="date-seg seg-mm" type="text" inputmode="numeric" maxlength="2" placeholder="分" data-seg="mm" value="${mm}">
+      <button type="button" class="date-field-cal-btn" title="カレンダーから選択">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <input type="date" tabindex="-1" aria-hidden="true" value="${isoDate || ''}" max="${todayIso}">
+      </button>
+    </div>`;
+}
+
+function bindDateTimeField(id, onChange) {
+  const root = document.querySelector(`.date-field[data-datetime-field-id="${id}"]`);
+  if (!root) return;
+  const hidden = document.getElementById(id);
+  const segY = root.querySelector('[data-seg="y"]');
+  const segM = root.querySelector('[data-seg="m"]');
+  const segD = root.querySelector('[data-seg="d"]');
+  const segHH = root.querySelector('[data-seg="hh"]');
+  const segMM = root.querySelector('[data-seg="mm"]');
+  const calInput = root.querySelector('.date-field-cal-btn input[type="date"]');
+
+  function currentIsoDate() {
+    const y = segY.value.trim();
+    const mo = segM.value.trim();
+    const d = segD.value.trim();
+    if (y.length === 4 && mo.length >= 1 && d.length >= 1) {
+      const isoStr = `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
+      const dt = new Date(isoStr + 'T00:00:00');
+      if (!isNaN(dt) && dt.getFullYear() === Number(y) && dt.getMonth() + 1 === Number(mo) && dt.getDate() === Number(d)) {
+        return isoStr;
+      }
+    }
+    return '';
+  }
+
+  function currentHHMM() {
+    const hh = segHH.value.trim();
+    const mm = segMM.value.trim();
+    if (hh.length >= 1 && mm.length >= 1) {
+      const h = Number(hh), mi = Number(mm);
+      if (!isNaN(h) && !isNaN(mi) && h >= 0 && h <= 23 && mi >= 0 && mi <= 59) {
+        return `${pad2(h)}:${pad2(mi)}`;
+      }
+    }
+    return '';
+  }
+
+  const todayIso = defaultDateStr(0);
+  function clampToToday(iso) {
+    if (iso && iso > todayIso) return todayIso;
+    return iso;
+  }
+
+  function commit() {
+    let iso = currentIsoDate();
+    const clamped = clampToToday(iso);
+    if (clamped !== iso && clamped) {
+      iso = clamped;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+      segY.value = m[1]; segM.value = m[2]; segD.value = m[3];
+    }
+    const hhmm = currentHHMM();
+    hidden.value = (iso && hhmm) ? `${iso}T${hhmm}` : '';
+    if (calInput) calInput.value = iso;
+    if (onChange) onChange(hidden.value);
+  }
+
+  function wireDigitsSegment(el, maxLen, next, maxVal) {
+    el.addEventListener('input', () => {
+      let digits = el.value.replace(/\D/g, '').slice(0, maxLen);
+      el.value = digits;
+      if (digits.length >= maxLen && next) next.focus();
+      commit();
+    });
+    el.addEventListener('blur', () => {
+      if (el.value.length === 1) el.value = pad2(Number(el.value));
+      if (maxVal != null && el.value !== '' && Number(el.value) > maxVal) el.value = pad2(maxVal);
+      commit();
+    });
+    el.addEventListener('focus', () => { el.select(); });
+  }
+  wireDigitsSegment(segY, 4, segM, null);
+  wireDigitsSegment(segM, 2, segD, null);
+  wireDigitsSegment(segD, 2, segHH, null);
+  wireDigitsSegment(segHH, 2, segMM, 23);
+  wireDigitsSegment(segMM, 2, null, 59);
+
+  // Backspaceで前セグメントへ戻る（年→月→日→時→分の連結感を出す）
+  [[segM, segY], [segD, segM], [segHH, segD], [segMM, segHH]].forEach(([el, prev]) => {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && el.selectionStart === 0 && el.selectionEnd === 0) {
+        prev.focus(); prev.setSelectionRange(prev.value.length, prev.value.length);
+      }
+    });
+  });
+
+  if (calInput) {
+    calInput.addEventListener('change', () => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(calInput.value || '');
+      if (m) {
+        segY.value = m[1]; segM.value = m[2]; segD.value = m[3];
+        commit();
+      }
+    });
+  }
+}
+
+// 戻り値: { date: "YYYY-MM-DD", time: "HH:MM" }（未入力部分は空文字）
+function getDateTimeFieldValue(id) {
+  const el = document.getElementById(id);
+  const v = el ? el.value : '';
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(v || '');
+  return m ? { date: m[1], time: m[2] } : { date: '', time: '' };
+}
+
+
 const tabButtons = document.querySelectorAll('.tab-btn');
 const views = document.querySelectorAll('.view');
 
@@ -1165,34 +1313,26 @@ function buildFromCache(dates) {
 }
 
 let sharedMap = null;
-let sharedDateRange = { startDate: null, endDate: null, rawFeatures: null };
+let sharedDateRange = { startDate: null, endDate: null, startTime: null, endTime: null, rawFeatures: null };
 let epicenterState = { data: [], startDate: null, endDate: null };
 
-function magColor(mag) {
-  if (mag == null) return '#8a8f9a';
-  if (mag < 3) return '#4fc3f7';
-  if (mag < 4) return '#39d98a';
-  if (mag < 5) return '#f9d55c';
-  if (mag < 6) return '#ff9f43';
-  if (mag < 7) return '#ff5470';
-  return '#d63aff';
-}
-
-function magRadius(mag) {
-  if (mag == null) return 3;
-  return Math.max(3, Math.min(22, mag * 3.2));
-}
+// circle-color（深さ基準グラデーション）とcircle-radius（マグニチュード基準）は
+// quake-circlesレイヤーのdata-driven paint式に移行済み。JS側の事前計算関数は撤廃。
 
 function featuresToGeoJSON(feats) {
-  const sorted = [...feats].sort((a, b) => (a.mag ?? -Infinity) - (b.mag ?? -Infinity));
+  // 描画順（circle-sort-key）とスタイリング（circle-color/circle-radius）は
+  // MapLibreのdata-driven式・sort-keyに委譲するため、ここではJS側での
+  // sortや色・半径の事前計算は行わない（件数が多いと重くなるため）。
   return {
     type: 'FeatureCollection',
-    features: sorted.map(f => ({
+    features: feats.map(f => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
       properties: {
         mag: f.mag,
-        depth: f.depth,
+        // depthはcircle-colorのグラデーションに使うため、MapLibreのnull非対応を
+        // 踏まえ「深さ不明」は-1のセンチネル値にする（timeと同じ理由）。
+        depth: f.depth != null ? f.depth : -1,
         place: f.place,
         // MapLibre（GeoJSONソース→geojson-vt経由）は GeoJSON の null プロパティ値を
         // サポートしておらず、null を渡すとプロパティキー自体が消えることがある。
@@ -1202,9 +1342,7 @@ function featuresToGeoJSON(feats) {
         // ポップアップ側で表示し、iOS実機のみで原因を特定できるようにする。
         // GeoJSONプロパティは文字列も許容されるためnullを避け空文字にフォールバック。
         timeRawDebug: f.timeRaw != null ? String(f.timeRaw) : '',
-        maxInt: f.maxInt,
-        color: magColor(f.mag),
-        radius: magRadius(f.mag)
+        maxInt: f.maxInt
       }
     }))
   };
@@ -1355,9 +1493,32 @@ function initSharedMap() {
       id: 'quake-circles',
       type: 'circle',
       source: 'quake-src',
+      layout: {
+        // 描画順（大きい地震を上に）をMapLibre側に委譲。JS側でのsortが不要になる。
+        'circle-sort-key': ['coalesce', ['get', 'mag'], -999]
+      },
       paint: {
-        'circle-radius': ['get', 'radius'],
-        'circle-color': ['get', 'color'],
+        // マグニチュード基準の半径（旧magRadius相当：M0→3px, M7→22.4px, 上限22px）
+        'circle-radius': [
+          'interpolate', ['linear'], ['coalesce', ['get', 'mag'], 0],
+          0, 3,
+          7, 22
+        ],
+        // 深さ基準の色グラデーション（0〜700km、浅=暖色→深=寒色）。
+        // depth=-1（不明）はグレーにフォールバック。
+        'circle-color': [
+          'case',
+          ['<', ['get', 'depth'], 0], '#8a8f9a',
+          [
+            'interpolate', ['linear'], ['get', 'depth'],
+            0,   '#ff5470',
+            30,  '#ff9f43',
+            70,  '#f9d55c',
+            150, '#39d98a',
+            300, '#4fc3f7',
+            700, '#7c4fe0'
+          ]
+        ],
         'circle-opacity': 0.65,
         'circle-stroke-width': 1,
         'circle-stroke-color': 'rgba(255,255,255,0.35)'
@@ -1490,13 +1651,15 @@ function buildSharedDatePanel() {
   panel.style.cssText = 'top:16px; left:16px; width:250px;';
   const initStart = sharedDateRange.startDate || defaultDateStr(-7);
   const initEnd = sharedDateRange.endDate || defaultDateStr(0);
+  const initStartTime = sharedDateRange.startTime || '00:00';
+  const initEndTime = sharedDateRange.endTime || '23:59';
   panel.innerHTML = `
     <div class="panel-title"><span class="bar"></span>期間指定</div>
-    <label class="field-label">開始日</label>
-    ${createDateFieldHTML('shared-date-start', initStart)}
+    <label class="field-label">開始日時</label>
+    ${createDateTimeFieldHTML('shared-datetime-start', initStart, initStartTime)}
     <div style="height:8px;"></div>
-    <label class="field-label">終了日</label>
-    ${createDateFieldHTML('shared-date-end', initEnd)}
+    <label class="field-label">終了日時</label>
+    ${createDateTimeFieldHTML('shared-datetime-end', initEnd, initEndTime)}
     <div style="height:12px;"></div>
     <button class="btn btn-accent" id="shared-date-fetch" style="width:100%;">データ取得</button>
     <div style="height:10px;"></div>
@@ -1505,8 +1668,8 @@ function buildSharedDatePanel() {
   container.appendChild(panel);
   observePanelForRestack(panel);
 
-  bindDateField('shared-date-start');
-  bindDateField('shared-date-end');
+  bindDateTimeField('shared-datetime-start');
+  bindDateTimeField('shared-datetime-end');
 
   document.getElementById('shared-date-fetch').addEventListener('click', runSharedFetch);
 
@@ -1523,12 +1686,32 @@ async function runSharedFetch() {
   }
 }
 
+// 開始日時〜終了日時（連続区間）でfeaturesを絞り込む。
+// time が -1（パース失敗＝時刻不明）のfeatureは、時刻フィルタ対象外として常に含める
+// （除外すると原因不明のデータ欠落に見えてしまうため）。
+function filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr) {
+  const st = startTimeStr || '00:00';
+  const et = endTimeStr || '23:59';
+  const rangeStart = new Date(`${startStr}T${st}:00`).getTime();
+  // 終了時刻は「その分の終わりまで」を含めるため+59.999秒
+  const rangeEnd = new Date(`${endStr}T${et}:00`).getTime() + 59999;
+  if (isNaN(rangeStart) || isNaN(rangeEnd)) return features;
+  return features.filter(f => {
+    if (f.time == null || f.time < 0) return true;
+    return f.time >= rangeStart && f.time <= rangeEnd;
+  });
+}
+
 async function runSharedFetchInner() {
-  const startStr = document.getElementById('shared-date-start').value;
-  const endStr = document.getElementById('shared-date-end').value;
+  const startDT = getDateTimeFieldValue('shared-datetime-start');
+  const endDT = getDateTimeFieldValue('shared-datetime-end');
+  const startStr = startDT.date;
+  const endStr = endDT.date;
+  const startTimeStr = startDT.time || '00:00';
+  const endTimeStr = endDT.time || '23:59';
   const statusEl = document.getElementById('shared-date-status');
   const btn = document.getElementById('shared-date-fetch');
-  if (!startStr || !endStr) { toast('開始日・終了日を指定してください'); return; }
+  if (!startStr || !endStr) { toast('開始日時・終了日時を指定してください'); return; }
 
   const dates = dateRange(startStr, endStr);
   if (dates.length === 0) { toast('日付範囲が不正です'); return; }
@@ -1538,8 +1721,11 @@ async function runSharedFetchInner() {
   if (!allArchiveCovered && dates.length > 92) { toast('一度に取得できるのは最大92日分です'); return; }
 
   if (sharedDateRange.rawFeatures && sharedDateRange.startDate === startStr && sharedDateRange.endDate === endStr) {
-    applySharedFeatures(sharedDateRange.rawFeatures);
-    statusEl.textContent = `${sharedDateRange.rawFeatures.length}件（共有データから即時反映）`;
+    const filtered = filterFeaturesByDateTimeRange(sharedDateRange.rawFeatures, startStr, endStr, startTimeStr, endTimeStr);
+    sharedDateRange.startTime = startTimeStr;
+    sharedDateRange.endTime = endTimeStr;
+    applySharedFeatures(filtered);
+    statusEl.textContent = `${filtered.length}件（共有データから即時反映）`;
     return;
   }
 
@@ -1547,9 +1733,12 @@ async function runSharedFetchInner() {
     const { features, errors } = buildFromCache(dates);
     sharedDateRange.startDate = startStr;
     sharedDateRange.endDate = endStr;
+    sharedDateRange.startTime = startTimeStr;
+    sharedDateRange.endTime = endTimeStr;
     sharedDateRange.rawFeatures = features;
-    applySharedFeatures(features);
-    statusEl.textContent = `${features.length}件（キャッシュから即時反映）${errors.length ? `／${errors.length}日分は取得失敗` : ''}`;
+    const filtered = filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr);
+    applySharedFeatures(filtered);
+    statusEl.textContent = `${filtered.length}件（キャッシュから即時反映）${errors.length ? `／${errors.length}日分は取得失敗` : ''}`;
     return;
   }
 
@@ -1563,17 +1752,20 @@ async function runSharedFetchInner() {
   btn.disabled = false;
   sharedDateRange.startDate = startStr;
   sharedDateRange.endDate = endStr;
+  sharedDateRange.startTime = startTimeStr;
+  sharedDateRange.endTime = endTimeStr;
   sharedDateRange.rawFeatures = features;
-  applySharedFeatures(features);
+  const filtered = filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr);
+  applySharedFeatures(filtered);
 
   if (errors.length > 0) {
-    statusEl.textContent = `${features.length}件取得（${errors.length}日分は取得失敗）`;
+    statusEl.textContent = `${filtered.length}件取得（${errors.length}日分は取得失敗）`;
     console.warn('hypo fetch errors:', errors);
     if (errors.length === dates.length) {
       toast('CORSまたはネットワークエラーによりデータを取得できませんでした。ブラウザのコンソールを確認してください。');
     }
   } else {
-    statusEl.textContent = `${features.length}件取得完了${cacheHits ? `（うちキャッシュ ${cacheHits}日分）` : ''}`;
+    statusEl.textContent = `${filtered.length}件取得完了${cacheHits ? `（うちキャッシュ ${cacheHits}日分）` : ''}`;
   }
 }
 
@@ -1590,16 +1782,17 @@ function buildEpicenterPanel() {
       display:flex; align-items:center; justify-content:space-between; gap:6px;
       font-family:var(--font-base); font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-2);
     ">
-      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>凡例（M）</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>凡例（深さ）</span>
       <svg id="epi-legend-caret" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="transition:transform .2s ease;"><path d="M6 9l6 6 6-6"/></svg>
     </button>
     <div id="epi-legend-body" style="margin-top:8px; display:none;">
-      <div class="legend-row"><span class="legend-swatch" style="background:#4fc3f7;"></span>&lt; 3.0</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#39d98a;"></span>3.0–3.9</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#f9d55c;"></span>4.0–4.9</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#ff9f43;"></span>5.0–5.9</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#ff5470;"></span>6.0–6.9</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#d63aff;"></span>≥ 7.0</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#ff5470;"></span>0km</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#ff9f43;"></span>30km</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#f9d55c;"></span>70km</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#39d98a;"></span>150km</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#4fc3f7;"></span>300km</div>
+      <div class="legend-row"><span class="legend-swatch" style="background:#7c4fe0;"></span>700km〜</div>
+      <div class="legend-row" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border, rgba(255,255,255,0.12)); color:var(--text-2); font-size:10px;">円の大きさ＝マグニチュード</div>
     </div>
   `;
   container.appendChild(panel);
@@ -1777,8 +1970,8 @@ function buildBvaluePanel() {
   
   document.getElementById('bv-mc-manual').addEventListener('input', computeAndRenderBvalue);
 
-  bvalueState.data = sharedDateRange.rawFeatures
-    ? sharedDateRange.rawFeatures.filter(f => f.mag != null)
+  bvalueState.data = (epicenterState.data && epicenterState.data.length)
+    ? epicenterState.data.filter(f => f.mag != null)
     : [];
   computeAndRenderBvalue();
 }
