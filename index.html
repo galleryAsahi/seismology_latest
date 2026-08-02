@@ -1855,6 +1855,12 @@ function setupBboxDrawing() {
     } else {
       const { bbox, geojson } = bboxPolygon(startLngLat, e.lngLat);
       sharedMap.getSource('bv-bbox').setData(geojson);
+      // base-world/base-pref はGeoJSON取得後（非同期）に quake-circles の直前へ
+      // moveLayer されるため、その完了タイミング次第で bv-bbox 系レイヤーより
+      // 手前（上）に来てしまい、不透明なベース地図がbboxの矩形を覆い隠すことがある。
+      // 描画のたびに最前面へ出し直すことで、読み込み順に依存せず常に見えるようにする。
+      if (sharedMap.getLayer('bv-bbox-fill')) sharedMap.moveLayer('bv-bbox-fill');
+      if (sharedMap.getLayer('bv-bbox-line')) sharedMap.moveLayer('bv-bbox-line');
       bvalueState.bbox = bbox;
       finishDrawing();
       updateBboxLabel();
