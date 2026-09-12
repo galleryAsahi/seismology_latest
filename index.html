@@ -35,10 +35,7 @@
 html,body{
   height:100%;
   margin:0;
-  background:
-    radial-gradient(circle at 15% 8%, rgba(255,159,67,0.07), transparent 45%),
-    radial-gradient(circle at 85% 92%, rgba(79,195,247,0.06), transparent 50%),
-    var(--bg-0);
+  background:var(--bg-0);
   color:var(--text-0);
   font-family: var(--font-base);
   overflow:hidden;
@@ -61,76 +58,382 @@ html,body{
   box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-.tabbar{
-  position:absolute;
-  bottom:18px; left:18px;
-  z-index:60;
-  display:flex; flex-direction:column; gap:4px;
-  padding:6px;
-  border-radius:20px;
-  background:#0d0e12;
-  border:1px solid rgba(255,255,255,0.14);
-  box-shadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
-}
-.tab-btn{
-  display:flex; flex-direction:row; align-items:center; gap:8px;
-  padding:9px 10px;
-  border-radius:14px;
-  border:none;
-  background:transparent;
-  color:var(--text-2);
-  font-family:var(--font-base);
-  font-size:11px;
-  font-weight:600;
-  cursor:pointer;
-  transition: color .25s ease, background .25s ease, transform .2s ease, padding .2s ease;
-  -webkit-user-select:none; user-select:none;
-  white-space:nowrap;
-  overflow:hidden;
-}
-.tab-btn svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.7; transition:transform .3s ease; flex-shrink:0;}
-.tab-btn .tab-label{
-  max-width:70px;
-  transition: max-width .25s ease, opacity .2s ease;
-  opacity:1;
-}
-.tab-btn.active{
-  color:var(--text-0);
-  background:var(--glass-fill-strong);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 10px rgba(0,0,0,0.25);
-}
-.tab-btn.active svg{transform:scale(1.05);}
-.tab-btn:active{transform:scale(0.96);}
-
-@media (max-width: 640px){
-  .tabbar{ bottom:14px; left:14px; padding:5px; }
-  .tab-btn{ padding:9px; }
-  .tab-btn .tab-label{ max-width:0; opacity:0; }
-}
-
 .map-container{position:absolute; inset:0; z-index:1;}
 
-.floating-panel{
+/* ============================================================
+   新UIシェル：常設は最小限（トップバー＋隅の丸ボタン群）、
+   設定・絞り込みはハンバーガーメニュー（ドロワー）に格納する。
+   ============================================================ */
+
+/* ---- トップバー：現在の表示モードと期間だけを常時表示 ---- */
+.topbar{
   position:absolute;
-  z-index:70;
-  padding:16px;
-}
-.floating-panel.glass-panel{
+  top:0; left:0; right:0;
+  z-index:80;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  padding-right:60px;
+  padding-top:calc(10px + env(safe-area-inset-top, 0px));
   background:#0d0e12;
-  backdrop-filter:none;
-  -webkit-backdrop-filter:none;
-  border:1px solid rgba(255,255,255,0.14);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+  pointer-events:none;
 }
-.floating-panel.glass-panel .field-label{ color:rgba(255,255,255,0.6); }
-.floating-panel.glass-panel .panel-title{ color:rgba(255,255,255,0.75); }
+.topbar > *{ pointer-events:auto; }
+
+/* ハンバーガーボタンは画面右上端に独立して常時固定する */
+.hamburger-fixed{
+  position:absolute;
+  top:calc(10px + env(safe-area-inset-top, 0px));
+  right:12px;
+  z-index:81;
+}
+
+.brand{
+  display:flex; align-items:center; gap:8px;
+  font-weight:800; font-size:14px; letter-spacing:0.01em; color:var(--text-0);
+  white-space:nowrap;
+  flex:0 0 auto;
+  padding:8px 12px;
+  border-radius:100px;
+  background:#20242e;
+  border:1px solid rgba(255,255,255,0.28);
+  color:var(--text-0);
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+}
+.brand-mode{
+  font-weight:600; font-size:11.5px; color:#c9cdd5;
+  padding:0;
+  padding-left:8px;
+  margin-left:2px;
+  border-left:1px solid rgba(255,255,255,0.24);
+  white-space:nowrap;
+}
+
+.period-chip{
+  flex:1 1 auto;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:100px;
+  background:#20242e;
+  border:1px solid rgba(255,255,255,0.28);
+  color:var(--text-0);
+  font-family:var(--font-base);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+  transition:background .15s ease, transform .15s ease;
+}
+.period-chip:hover{ background:#2a303c; }
+.period-chip:active{ transform:scale(0.98); }
+.period-chip svg{ width:15px; height:15px; stroke:var(--accent-2); fill:none; stroke-width:2; flex-shrink:0; }
+.period-chip .period-text{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-variant-numeric: tabular-nums;
+  color:#d9dce2;
+  font-weight:500;
+}
+.period-chip .period-status-dot{
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text-2);
+  flex-shrink:0;
+}
+.period-chip .period-status-dot.live{ background:var(--safe); box-shadow:0 0 6px rgba(57,217,138,0.6); }
+.period-chip .period-status-dot.loading{ background:var(--accent); animation:pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+/* ---- 丸ボタン共通（凡例・ハンバーガー） ---- */
+.round-btn{
+  flex:0 0 auto;
+  width:38px; height:38px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%;
+  background:#20242e;
+  border:1px solid rgba(255,255,255,0.28);
+  color:var(--text-0);
+  cursor:pointer;
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+  transition:background .15s ease, transform .15s ease;
+  position:relative;
+}
+.round-btn:hover{ background:#2a303c; }
+.round-btn:active{ transform:scale(0.94); }
+.round-btn svg{ width:19px; height:19px; stroke:currentColor; fill:none; stroke-width:1.8; }
+.round-btn .badge-dot{
+  position:absolute; top:6px; right:6px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--accent);
+  border:1.5px solid var(--bg-0);
+  display:none;
+}
+.round-btn .badge-dot.show{ display:block; }
+
+/* ---- glass-popover：凡例やb値ツールバーなど、地図上に浮かぶ小パネル共通の見た目 ---- */
+.glass-popover{
+  background:#0d0e12;
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius-md, 14px);
+  box-shadow:0 8px 28px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ---- 凡例ポップオーバー（地図左下の丸ボタンから開く） ---- */
+.legend-fab{
+  position:absolute;
+  left:12px;
+  bottom:calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index:75;
+}
+.legend-fab .round-btn{
+  background:rgba(13,14,18,0.92);
+  border-color:rgba(255,255,255,0.1);
+  color:var(--text-0);
+}
+.legend-fab .round-btn:hover{ background:rgba(24,26,33,0.95); }
+.legend-popover{
+  position:absolute;
+  bottom:48px; left:0;
+  min-width:168px;
+  max-width:min(300px, calc(100vw - 24px));
+  padding:14px;
+  transform-origin:bottom left;
+  transform:scale(0.92) translateY(6px);
+  opacity:0;
+  pointer-events:none;
+  transition:transform .16s cubic-bezier(.2,.8,.3,1.3), opacity .14s ease;
+}
+.legend-popover.open{
+  transform:scale(1) translateY(0);
+  opacity:1;
+  pointer-events:auto;
+}
+
+/* ---- ハンバーガーメニュー / ドロワー ---- */
+.menu-scrim{
+  position:absolute; inset:0;
+  z-index:95;
+  background:rgba(6,7,10,0.5);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .22s ease;
+}
+.menu-scrim.open{ opacity:1; pointer-events:auto; }
+
+.menu-drawer{
+  position:absolute;
+  top:0; right:0; bottom:0;
+  z-index:96;
+  width:340px;
+  max-width:88vw;
+  background:#0d0e12;
+  border-left:1px solid rgba(255,255,255,0.12);
+  box-shadow:-16px 0 44px rgba(0,0,0,0.5);
+  display:flex; flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .26s cubic-bezier(.2,.7,.3,1);
+  overflow:hidden;
+}
+.menu-drawer.open{ transform:translateX(0); }
+
+.menu-header{
+  flex:0 0 auto;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px;
+  padding:16px 16px;
+  padding-top:calc(16px + env(safe-area-inset-top, 0px));
+  border-bottom:1px solid var(--glass-border);
+}
+.menu-header-title{ font-size:15px; font-weight:800; color:var(--text-0); }
+.menu-close-btn{
+  width:32px; height:32px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%;
+  background:transparent;
+  border:none;
+  color:var(--text-1);
+  cursor:pointer;
+  transition:background .15s ease;
+}
+.menu-close-btn:hover{ background:var(--glass-fill); color:var(--text-0); }
+.menu-close-btn svg{ width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; }
+
+.menu-body{
+  flex:1 1 auto;
+  overflow-y:auto;
+  padding:14px 16px 28px 16px;
+  padding-bottom:calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
+/* モード切替（震央分布／b値解析／震源球） */
+.mode-switch{
+  display:flex; flex-direction:column; gap:6px;
+  margin-bottom:18px;
+}
+.mode-switch-btn{
+  display:flex; align-items:center; gap:12px;
+  padding:12px 13px;
+  border-radius:var(--radius-md);
+  border:1px solid rgba(255,255,255,0.09);
+  background:#191b21;
+  color:var(--text-1);
+  font-family:var(--font-base);
+  font-size:13.5px; font-weight:700;
+  cursor:pointer;
+  text-align:left;
+  transition:background .15s ease, border-color .15s ease, color .15s ease;
+}
+.mode-switch-btn svg{ width:19px; height:19px; stroke:currentColor; fill:none; stroke-width:1.7; flex-shrink:0; }
+.mode-switch-btn .mode-switch-sub{
+  font-size:11px; font-weight:500; color:var(--text-2);
+  margin-top:1px;
+}
+.mode-switch-btn:hover{ background:#212430; }
+.mode-switch-btn.active{
+  color:var(--text-0);
+  background:rgba(255,159,67,0.16);
+  border-color:rgba(255,159,67,0.4);
+}
+.mode-switch-btn.active svg{ color:var(--accent); }
+
+/* アコーディオンセクション（絞り込み・解析対象領域・b値結果など） */
+.menu-section{
+  border-radius:var(--radius-md);
+  border:1px solid rgba(255,255,255,0.09);
+  background:#191b21;
+  margin-bottom:10px;
+  overflow:hidden;
+}
+.menu-section-head{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  width:100%;
+  padding:13px 14px;
+  background:none; border:none;
+  cursor:pointer;
+  font-family:var(--font-base);
+  color:var(--text-0);
+  text-align:left;
+}
+.menu-section-head-label{
+  display:flex; align-items:center; gap:9px;
+  font-size:13px; font-weight:700;
+}
+.menu-section-head-label svg{ width:16px; height:16px; stroke:var(--text-2); fill:none; stroke-width:1.8; flex-shrink:0; }
+.menu-section-head-right{ display:flex; align-items:center; gap:8px; }
+.menu-section-badge{
+  font-size:10.5px; font-weight:700;
+  color:var(--accent);
+  background:rgba(255,159,67,0.14);
+  padding:2px 8px;
+  border-radius:100px;
+  display:none;
+  white-space:nowrap;
+}
+.menu-section-badge.show{ display:inline-block; }
+.menu-section-caret{ width:14px; height:14px; stroke:var(--text-2); fill:none; stroke-width:2; transition:transform .2s ease; flex-shrink:0; }
+.menu-section.expanded .menu-section-caret{ transform:rotate(180deg); }
+.menu-section-body{
+  display:none;
+  padding:2px 14px 15px 14px;
+  border-top:1px solid var(--glass-border);
+  padding-top:13px;
+}
+.menu-section.expanded .menu-section-body{ display:block; }
+
+.menu-footnote{
+  font-size:10.5px; color:var(--text-2); line-height:1.7;
+  padding:2px 4px 4px 4px;
+}
+
+/* ==== 期間指定：デスクトップ＝チップ直下のポップオーバー / モバイル＝ボトムシート ==== */
+
+/* デスクトップ（既定）：右上の期間チップの下に小さく開くポップオーバー */
+.sheet-scrim{
+  position:absolute; inset:0;
+  z-index:97;
+  background:transparent;
+  opacity:0;
+  pointer-events:none;
+}
+.sheet-scrim.open{ opacity:1; pointer-events:auto; }
+
+.bottom-sheet{
+  position:absolute;
+  top:58px; right:12px;
+  left:auto; bottom:auto;
+  z-index:98;
+  width:280px;
+  max-width:88vw;
+  background:#0d0e12;
+  border:1px solid rgba(255,255,255,0.14);
+  border-radius:16px;
+  box-shadow:0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  padding:16px 16px 16px 16px;
+  transform-origin:top right;
+  transform:scale(0.94) translateY(-6px);
+  opacity:0;
+  pointer-events:none;
+  transition:transform .18s cubic-bezier(.2,.8,.3,1.2), opacity .15s ease;
+}
+.bottom-sheet.open{ transform:scale(1) translateY(0); opacity:1; pointer-events:auto; }
+.sheet-grabber{ display:none; }
+.sheet-title{ font-size:13.5px; font-weight:800; color:var(--text-0); margin-bottom:12px; }
+
+/* モバイル：画面下からのボトムシートに切り替える */
+@media (max-width: 640px){
+  .sheet-scrim{ background:rgba(6,7,10,0.5); }
+
+  .bottom-sheet{
+    position:absolute;
+    left:0; right:0; top:auto; bottom:0;
+    z-index:98;
+    width:auto;
+    max-width:420px;
+    margin:0 auto;
+    border-radius:20px 20px 0 0;
+    box-shadow:0 -14px 40px rgba(0,0,0,0.5);
+    padding:8px 18px 20px 18px;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px));
+    transform:translateY(100%);
+    transition:transform .26s cubic-bezier(.2,.7,.3,1);
+  }
+  .bottom-sheet.open{ transform:translateY(0); }
+  .sheet-grabber{
+    display:block;
+    width:36px; height:4px; border-radius:3px;
+    background:rgba(255,255,255,0.2);
+    margin:0 auto 14px auto;
+  }
+  .sheet-title{ font-size:14.5px; margin-bottom:14px; }
+}
+
+/* メニュー・シート内で使う汎用フィールドラベル */
+.menu-section .field-label,
+.bottom-sheet .field-label{ color:var(--text-1); }
+
+@media (max-width: 640px){
+  .brand-mode{ display:none; }
+  .period-chip .period-text{ font-size:11px; }
+}
+@media (max-width: 400px){
+  .brand span.brand-name-full{ display:none; }
+}
+#bv-toolbar{ flex-wrap:wrap; justify-content:center; }
+@media (max-width: 480px){
+  #bv-toolbar #bv-bbox-label{ flex-basis:100%; max-width:100% !important; text-align:center; }
+}
+
 .panel-title{
   font-size:11px; font-weight:700; letter-spacing:0.08em;
   color:var(--text-2);
   margin:0 0 10px 0;
-  display:flex; align-items:center; gap:6px;
+  display:flex; align-items:center;
 }
-.panel-title .bar{width:3px; height:12px; background:var(--accent); border-radius:2px;}
 
 label.field-label{
   font-size:11px; color:var(--text-2); display:block; margin-bottom:4px; letter-spacing:0.02em;
@@ -253,11 +556,11 @@ select option{
 .btn:hover{background:rgba(255,255,255,0.14);}
 .btn:active{transform:scale(0.97);}
 .btn-accent{
-  background:linear-gradient(135deg, rgba(255,159,67,0.9), rgba(255,120,67,0.85));
+  background:var(--accent);
   border-color:rgba(255,159,67,0.5);
   color:#1a0f00;
 }
-.btn-accent:hover{background:linear-gradient(135deg, rgba(255,175,90,0.95), rgba(255,135,80,0.9));}
+.btn-accent:hover{background:#ffb066;}
 .btn:disabled{opacity:0.4; cursor:not-allowed; transform:none;}
 
 .btn-sm{padding:6px 11px; font-size:11px; border-radius:8px;}
@@ -284,7 +587,7 @@ select option{
 
 .toast{
   position:absolute; top:16px; left:50%; transform:translateX(-50%) translateY(-10px);
-  z-index:90;
+  z-index:99;
   padding:10px 16px;
   border-radius:12px;
   background:rgba(30,20,20,0.75);
@@ -304,6 +607,79 @@ select option{
 .legend-row{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-1); margin:3px 0;}
 .legend-swatch{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
 
+/* ---- Mごとの円サイズ凡例（M1〜M7） ---- */
+.legend-mag-row{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:4px;
+  padding:2px 2px 0;
+}
+.legend-mag-item{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:5px;
+  flex:1 1 0;
+}
+.legend-mag-item .legend-mag-circle{
+  width:40px; height:40px;
+  display:flex; align-items:flex-end; justify-content:center;
+  flex-shrink:0;
+}
+.legend-mag-item .legend-mag-circle span{
+  display:block;
+  border-radius:50%;
+  background:#ff0000;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.35);
+}
+.legend-mag-item .legend-mag-label{
+  font-size:10.5px;
+  font-weight:600;
+  color:var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.legend-mag-title{
+  font-size:10px;
+  color:var(--text-2);
+  letter-spacing:0.06em;
+  margin-bottom:2px;
+}
+
+/* ---- 深さ色グラデーションのカラーバー凡例 ---- */
+.legend-depth-title{
+  font-size:10px;
+  color:var(--text-2);
+  letter-spacing:0.06em;
+  text-align:center;
+  margin:10px 0 5px;
+}
+.legend-depth-bar{
+  height:14px;
+  border-radius:4px;
+  background:linear-gradient(to right,
+    #ff0000 0%,
+    #ff8c00 14.28%,
+    #ffd700 28.57%,
+    #adff2f 42.86%,
+    #00c853 57.14%,
+    #00bcd4 71.43%,
+    #1e88e5 85.71%,
+    #0d47a1 100%
+  );
+  box-shadow:0 0 0 1px rgba(255,255,255,0.15);
+}
+.legend-depth-scale{
+  display:flex;
+  justify-content:space-between;
+  margin-top:4px;
+}
+.legend-depth-scale span{
+  font-size:9.5px;
+  color:var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .maplibregl-popup-content{
   background:rgba(18,20,25,0.92);
   backdrop-filter: blur(20px) saturate(160%);
@@ -315,8 +691,43 @@ select option{
   color:var(--text-0);
 }
 .maplibregl-popup-tip{
-  border-top-color:rgba(18,20,25,0.92) !important;
+  border-width:6px !important;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip{
+  border-top-width:0 !important;
   border-bottom-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip{
+  border-top-width:0 !important;
+  border-left-width:0 !important;
+  border-bottom-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip{
+  border-top-width:0 !important;
+  border-right-width:0 !important;
+  border-bottom-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip{
+  border-bottom-width:0 !important;
+  border-top-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip{
+  border-bottom-width:0 !important;
+  border-left-width:0 !important;
+  border-top-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip{
+  border-bottom-width:0 !important;
+  border-right-width:0 !important;
+  border-top-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip{
+  border-left-width:0 !important;
+  border-right-color:rgba(18,20,25,0.92) !important;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip{
+  border-right-width:0 !important;
+  border-left-color:rgba(18,20,25,0.92) !important;
 }
 .maplibregl-popup-close-button{
   color:var(--text-1);
@@ -327,87 +738,6 @@ select option{
   color:var(--text-0);
   background:rgba(255,255,255,0.08);
 }
-
-@media (max-width: 640px){
-  .floating-panel.desktop-only{display:none;}
-}
-
-.floating-panel.mobile-stacked{
-  position:absolute !important;
-  left:10px !important;
-  right:auto !important;
-  width:200px !important;
-  max-width:62vw !important;
-  box-sizing:border-box;
-  padding:11px 12px !important;
-  border-radius:16px !important;
-}
-
-/* b値解析結果パネルをモバイルでは右上に配置 */
-.floating-panel.mobile-stacked#bv-result-panel {
-  left: auto !important;
-  right: 10px !important;
-  width: 190px !important;
-}
-
-.floating-panel.mobile-stacked .panel-title{
-  font-size:10px !important;
-  margin-bottom:7px !important;
-}
-.floating-panel.mobile-stacked label.field-label{
-  font-size:9.5px !important;
-  margin-bottom:3px !important;
-}
-.floating-panel.mobile-stacked .date-field{
-  height:30px !important;
-  gap:2px !important;
-  padding:0 8px !important;
-}
-.floating-panel.mobile-stacked .date-seg,
-.floating-panel.mobile-stacked .date-sep{
-  font-size:12px !important;
-}
-.floating-panel.mobile-stacked .date-seg.seg-y{ width:4.4ch !important; }
-.floating-panel.mobile-stacked .date-seg.seg-m,
-.floating-panel.mobile-stacked .date-seg.seg-d{ width:2.4ch !important; }
-.floating-panel.mobile-stacked .date-seg.seg-hh,
-.floating-panel.mobile-stacked .date-seg.seg-mm{ width:2.4ch !important; }
-.floating-panel.mobile-stacked input[type="number"],
-.floating-panel.mobile-stacked select{
-  padding:6px 8px !important;
-  font-size:11px !important;
-}
-.floating-panel.mobile-stacked .btn{
-  padding:7px 8px !important;
-  font-size:11px !important;
-}
-.floating-panel.mobile-stacked .btn-sm{
-  padding:6px 8px !important;
-  font-size:10px !important;
-}
-.floating-panel.mobile-stacked .status-text{
-  font-size:9.5px !important;
-}
-.floating-panel.mobile-stacked #bv-result{
-  font-size:10.5px !important;
-  line-height:1.55 !important;
-}
-.floating-panel.mobile-stacked .row{
-  flex-direction:column !important;
-  gap:6px !important;
-}
-.floating-panel.mobile-stacked #bv-result div[style*="font-size:26px"]{
-  font-size:20px !important;
-}
-.floating-panel.mobile-stacked .legend-row{
-  font-size:10px !important;
-  margin:2px 0 !important;
-}
-.floating-panel.mobile-stacked > div[style*="height:6px"],
-.floating-panel.mobile-stacked > div[style*="height:8px"]{ height:5px !important; }
-.floating-panel.mobile-stacked > div[style*="height:10px"],
-.floating-panel.mobile-stacked > div[style*="height:12px"],
-.floating-panel.mobile-stacked > div[style*="height:14px"]{ height:7px !important; }
 
 .mech-layout{
   display:flex;
@@ -454,7 +784,7 @@ select option{
   .mech-layout{ flex-direction:column; height:auto; }
   .mech-list-col{ flex:1 1 auto; width:100%; height:auto; overflow-y:visible; }
   .mech-detail-col{ width:100%; height:auto; overflow-y:visible; }
-  #mech-scroll{ overflow-y:auto !important; padding:16px 16px 100px 16px !important; }
+  #mech-scroll{ overflow-y:auto !important; padding:70px 16px 100px 16px !important; }
 }
 </style>
 </head>
@@ -462,26 +792,90 @@ select option{
 <div id="app">
   <div id="toast" class="toast"></div>
   <div class="map-container" id="map-shared"></div>
-  <div id="shared-date-panel-root"></div>
+
   <div class="view active" id="view-epicenter"></div>
   <div class="view" id="view-bvalue"></div>
   <div class="view" id="view-mech">
-    <div class="mech-scroll" id="mech-scroll" style="position:absolute; inset:0; overflow:hidden; padding:16px 16px 16px 130px; z-index:40; background:var(--bg-0);"></div>
+    <div class="mech-scroll" id="mech-scroll" style="position:absolute; inset:0; overflow:hidden; padding:16px; padding-top:70px; z-index:40; background:var(--bg-0);"></div>
   </div>
 
-  <div class="tabbar">
-    <button class="tab-btn active" data-view="view-epicenter">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="2.5"/><path d="M12 21s7-6.4 7-12a7 7 0 10-14 0c0 5.6 7 12 7 12z"/></svg>
-      <span class="tab-label">震央分布</span>
+  <!-- ============ 常設トップバー：現在モード＋期間チップ ============ -->
+  <div class="topbar">
+    <div class="brand">
+      <span>震析</span>
+      <span class="brand-mode" id="brand-mode-label">震央分布</span>
+    </div>
+    <button type="button" class="period-chip" id="period-chip-btn">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      <span class="period-text" id="period-chip-text">期間を選択</span>
+      <span class="period-status-dot" id="period-chip-dot"></span>
     </button>
-    <button class="tab-btn" data-view="view-bvalue">
-      <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
-      <span class="tab-label">b値解析</span>
+  </div>
+
+  <!-- ============ ハンバーガーボタン：画面右上端に常時固定 ============ -->
+  <div class="hamburger-fixed">
+    <button type="button" class="round-btn" id="hamburger-btn" aria-label="メニューを開く">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <span class="badge-dot" id="hamburger-badge"></span>
     </button>
-    <button class="tab-btn" data-view="view-mech">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>
-      <span class="tab-label">震源球</span>
+  </div>
+
+  <!-- ============ 凡例（地図左下の丸ボタン→ポップオーバー） ============ -->
+  <div class="legend-fab" id="legend-fab" style="display:none;">
+    <button type="button" class="round-btn" id="legend-fab-btn" aria-label="凡例を表示">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg>
     </button>
+    <div class="glass-popover legend-popover" id="legend-popover" style="padding:14px;">
+      <div class="panel-title" style="margin-bottom:8px;">凡例（深さ）</div>
+      <div id="legend-popover-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ ハンバーガーメニュー：ドロワー ============ -->
+  <div class="menu-scrim" id="menu-scrim"></div>
+  <div class="menu-drawer" id="menu-drawer">
+    <div class="menu-header">
+      <div class="menu-header-title">表示・絞り込み</div>
+      <button type="button" class="menu-close-btn" id="menu-close-btn" aria-label="閉じる">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="menu-body" id="menu-body">
+      <div class="mode-switch" id="mode-switch">
+        <button type="button" class="mode-switch-btn active" data-view="view-epicenter">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="2.5"/><path d="M12 21s7-6.4 7-12a7 7 0 10-14 0c0 5.6 7 12 7 12z"/></svg>
+          <span>
+            震央分布
+            <div class="mode-switch-sub">地図上に震央をプロット</div>
+          </span>
+        </button>
+        <button type="button" class="mode-switch-btn" data-view="view-bvalue">
+          <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
+          <span>
+            b値解析
+            <div class="mode-switch-sub">領域を選んで地震活動を解析</div>
+          </span>
+        </button>
+        <button type="button" class="mode-switch-btn" data-view="view-mech">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>
+          <span>
+            震源球
+            <div class="mode-switch-sub">発震機構解を一覧表示</div>
+          </span>
+        </button>
+      </div>
+
+      <div id="menu-sections-epi" style="display:block;"></div>
+      <div id="menu-sections-bv" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- ============ 期間指定ボトムシート ============ -->
+  <div class="sheet-scrim" id="period-sheet-scrim"></div>
+  <div class="bottom-sheet" id="period-sheet">
+    <div class="sheet-grabber"></div>
+    <div class="sheet-title">期間指定</div>
+    <div id="period-sheet-body"></div>
   </div>
 </div>
 
@@ -916,7 +1310,7 @@ function getDateTimeFieldValue(id) {
 }
 
 
-const tabButtons = document.querySelectorAll('.tab-btn');
+const modeSwitchButtons = document.querySelectorAll('.mode-switch-btn');
 const views = document.querySelectorAll('.view');
 
 const VIEW_LAYERS = {
@@ -924,6 +1318,12 @@ const VIEW_LAYERS = {
   'view-bvalue': ['quake-circles', 'plate-boundaries-line', 'bv-bbox-fill', 'bv-bbox-line']
 };
 const ALL_SHARED_LAYERS = [...new Set(Object.values(VIEW_LAYERS).flat())];
+
+const VIEW_MODE_LABELS = {
+  'view-epicenter': '震央分布',
+  'view-bvalue': 'b値解析',
+  'view-mech': '震源球'
+};
 
 function applyLayerVisibilityFor(viewId) {
   if (!Object.prototype.hasOwnProperty.call(VIEW_LAYERS, viewId)) return;
@@ -936,28 +1336,118 @@ function applyLayerVisibilityFor(viewId) {
 }
 
 function activateView(targetId) {
-  tabButtons.forEach(b => b.classList.toggle('active', b.dataset.view === targetId));
+  modeSwitchButtons.forEach(b => b.classList.toggle('active', b.dataset.view === targetId));
   views.forEach(v => v.classList.toggle('active', v.id === targetId));
 
-  const sharedDatePanelRoot = document.getElementById('shared-date-panel-root');
-  if (sharedDatePanelRoot) {
-    sharedDatePanelRoot.style.display =
-      (targetId === 'view-epicenter' || targetId === 'view-bvalue') ? '' : 'none';
-  }
+  const isDateDrivenView = (targetId === 'view-epicenter' || targetId === 'view-bvalue');
+
+  // トップバー：現在のモード名と期間チップの表示切替
+  const modeLabelEl = document.getElementById('brand-mode-label');
+  if (modeLabelEl) modeLabelEl.textContent = VIEW_MODE_LABELS[targetId] || '';
+  const periodChipBtn = document.getElementById('period-chip-btn');
+  if (periodChipBtn) periodChipBtn.style.display = isDateDrivenView ? '' : 'none';
+
+  // 凡例ボタンは震央分布・b値解析でのみ表示
+  const legendFab = document.getElementById('legend-fab');
+  if (legendFab) legendFab.style.display = isDateDrivenView ? '' : 'none';
+
+  // ハンバーガーメニュー内：モードごとの絞り込みセクション出し分け
+  const menuSectionsEpi = document.getElementById('menu-sections-epi');
+  const menuSectionsBv = document.getElementById('menu-sections-bv');
+  if (menuSectionsEpi) menuSectionsEpi.style.display = (targetId === 'view-epicenter') ? 'block' : 'none';
+  if (menuSectionsBv) menuSectionsBv.style.display = (targetId === 'view-bvalue') ? 'block' : 'none';
 
   applyLayerVisibilityFor(targetId);
-  applyResponsivePanelLayout();
 }
 
-tabButtons.forEach(btn => {
-  btn.addEventListener('click', () => activateView(btn.dataset.view));
+modeSwitchButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    activateView(btn.dataset.view);
+    closeMenuDrawer();
+  });
 });
+
+// ============ ハンバーガーメニュー（ドロワー）の開閉 ============
+function openMenuDrawer() {
+  document.getElementById('menu-scrim').classList.add('open');
+  document.getElementById('menu-drawer').classList.add('open');
+}
+function closeMenuDrawer() {
+  document.getElementById('menu-scrim').classList.remove('open');
+  document.getElementById('menu-drawer').classList.remove('open');
+}
+document.getElementById('hamburger-btn').addEventListener('click', openMenuDrawer);
+document.getElementById('menu-close-btn').addEventListener('click', closeMenuDrawer);
+document.getElementById('menu-scrim').addEventListener('click', closeMenuDrawer);
+
+// ============ 期間指定ボトムシートの開閉 ============
+function openPeriodSheet() {
+  document.getElementById('period-sheet-scrim').classList.add('open');
+  document.getElementById('period-sheet').classList.add('open');
+}
+function closePeriodSheet() {
+  document.getElementById('period-sheet-scrim').classList.remove('open');
+  document.getElementById('period-sheet').classList.remove('open');
+}
+document.getElementById('period-chip-btn').addEventListener('click', openPeriodSheet);
+document.getElementById('period-sheet-scrim').addEventListener('click', closePeriodSheet);
+
+// ============ 凡例ポップオーバーの開閉 ============
+document.getElementById('legend-fab-btn').addEventListener('click', () => {
+  document.getElementById('legend-popover').classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  const fab = document.getElementById('legend-fab');
+  if (fab && !fab.contains(e.target)) {
+    document.getElementById('legend-popover').classList.remove('open');
+  }
+});
+
+// ============ アコーディオンセクション（menu-section）の開閉 ============
+function bindAccordionSection(sectionEl) {
+  const head = sectionEl.querySelector('.menu-section-head');
+  if (!head) return;
+  head.addEventListener('click', () => {
+    sectionEl.classList.toggle('expanded');
+  });
+}
 
 function hypoUrlFor(dateObj) {
   const y = dateObj.getFullYear();
   const m = pad2(dateObj.getMonth() + 1);
   const d = pad2(dateObj.getDate());
   return `https://www.jma.go.jp/bosai/hypo/data/${y}/${m}/hypo${y}${m}${d}.geojson`;
+}
+
+// 日別震源リストページ（震央分布図＋震源リスト）のURL。
+// 2日前までのデータしか載らないため、直近7日間は使わずbosai/hypoの方を使う
+// （dailyMapCutoffDate()参照）。
+function dailyMapUrlFor(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = pad2(dateObj.getMonth() + 1);
+  const d = pad2(dateObj.getDate());
+  return `https://www.data.jma.go.jp/eqev/data/daily_map/${y}${m}${d}.html`;
+}
+
+// 「使用時（今日）の何日前か」を起点に、hypo_dataアーカイブ・daily_map・bosai/hypoの
+// 3ソースへの日付振り分け境界を求める。
+//   - 静的アーカイブ（hypo_data）: 〜2025/5/31（HYPO_ARCHIVESのendMsで判定）
+//   - daily_map: アーカイブ終端の翌日 〜 今日の8日前
+//   - bosai/hypo（直近フィード）: 今日の7日前 〜 今日
+function dailyMapCutoffDate() {
+  // 今日の7日前の0時。この日以降（7日前〜今日）はbosai/hypoを使う。
+  const today = new Date();
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  cutoff.setDate(cutoff.getDate() - 7);
+  return cutoff;
+}
+
+function isDailyMapCoveredDate(dateObj) {
+  const y = dateObj.getFullYear(), mo = dateObj.getMonth(), d = dateObj.getDate();
+  const startOfDay = new Date(y, mo, d, 0, 0, 0, 0).getTime();
+  const dailyMapCutoffMs = dailyMapCutoffDate().getTime();
+  // アーカイブ範囲より後、かつ「今日の7日前」より前ならdaily_map対象。
+  return startOfDay > HYPO_ARCHIVE_CUTOFF_MS && startOfDay < dailyMapCutoffMs;
 }
 
 function dateRange(startStr, endStr) {
@@ -998,7 +1488,9 @@ function parseTimeRobust(raw) {
   //   - 秒の小数部も "." 区切りで、ミリ秒ではなく百分の1秒（2桁）
   // Chrome(V8)のDateパーサはこれを緩く解釈できてしまうが、Safari/WebKitでは
   // Invalid Dateになる。タイムゾーン情報は無いのでJST（気象庁データの慣習）とみなす。
-  const mJmaDot = /^(\d{4})\/(\d{2})\/(\d{2})\.(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/.exec(s);
+  // 秒（および小数秒）は省略されることがある（例: "2026/09/12.05:55"）ため、
+  // ":(\d{2})" 以降を丸ごとオプションにしてマッチさせる。
+  const mJmaDot = /^(\d{4})\/(\d{2})\/(\d{2})\.(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(s);
   if (mJmaDot) {
     const [, y, mo, d, h, mi, sec, frac] = mJmaDot;
     // frac は "68" のような百分の1秒表記のことが多いため、桁数に応じてミリ秒に変換する
@@ -1006,7 +1498,7 @@ function parseTimeRobust(raw) {
     if (frac) {
       fracMs = Math.round(Number(`0.${frac}`) * 1000);
     }
-    const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec))
+    const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec || 0))
       - 9 * 60 * 60 * 1000;
     return utcMs + fracMs;
   }
@@ -1114,35 +1606,27 @@ function dayKey(dateObj) {
 // 一部環境（JST以外のOS設定やNode.jsでのテスト実行）でのタイムゾーン二重変換によるズレを防ぐ。
 const HYPO_ARCHIVES = [
   {
-    url: 'jma_hypocenters.json.gz',
+    url: 'hypo_data/jma_hypocenters.json.gz',
     startMs: new Date(2024, 0, 1, 0, 0, 0, 0).getTime(),
-    endMs: new Date(2025, 11, 31, 23, 59, 59, 999).getTime()
+    // 実データは2025年5月末までしか含まれていないため、終端をここに合わせる。
+    // 2025/6/1以降は daily_map（日別震源リストページ）にソースを切り替える。
+    endMs: new Date(2025, 4, 31, 23, 59, 59, 999).getTime()
   },
+  // 2013/03/23〜2023/12/31（JST）分。独自バイナリ形式（1レコード可変長、gzip圧縮）。
+  // 507万件規模のカタログを25MB未満(gz込み)に収めるため、NDJSONではなく
+  // 固定長カラム＋差分エンコードの専用バイナリで持っている（decodeHypoBinary参照）。
   {
-    url: 'jma_hypocenters_2023-2019.gz',
-    startMs: new Date(2019, 0, 1, 0, 0, 0, 0).getTime(),
+    url: 'hypo_data/hypo_data2.bin.gz',
+    format: 'bin',
+    startMs: new Date(2013, 2, 23, 0, 0, 0, 0).getTime(),
     endMs: new Date(2023, 11, 31, 23, 59, 59, 999).getTime()
   },
+  // 1919/01/01〜2013/03/22（JST）分。上と同じ独自バイナリ形式。
   {
-    url: 'jma_hypocenters_2018-2013.gz',
-    startMs: new Date(2013, 0, 1, 0, 0, 0, 0).getTime(),
-    endMs: new Date(2018, 11, 31, 23, 59, 59, 999).getTime()
-  },
-  {
-    url: 'jma_hypocenters_2012-2005.gz',
-    startMs: new Date(2005, 0, 1, 0, 0, 0, 0).getTime(),
-    endMs: new Date(2012, 11, 31, 23, 59, 59, 999).getTime()
-  },
-  {
-    url: 'jma_hypocenters_2004-1998.gz',
-    startMs: new Date(1998, 0, 1, 0, 0, 0, 0).getTime(),
-    endMs: new Date(2004, 11, 31, 23, 59, 59, 999).getTime()
-  },
-  {
-    // 1919/01/01〜1997/12/31分（jma_hypocenters_2004-1998.gzとの重複なし）
-    url: 'jma_hypocenters_1997-1919.gz',
+    url: 'hypo_data/hypo_data1.bin.gz',
+    format: 'bin',
     startMs: new Date(1919, 0, 1, 0, 0, 0, 0).getTime(),
-    endMs: new Date(1997, 11, 31, 23, 59, 59, 999).getTime()
+    endMs: new Date(2013, 2, 22, 23, 59, 59, 999).getTime()
   }
 ];
 
@@ -1164,6 +1648,133 @@ function archiveRecordToFeature(rec) {
       dep: rec.dep
     }
   };
+}
+
+// ------------------------------------------------------------------
+// 独自バイナリ形式（hypo_data*.bin.gz）のデコーダ
+//
+// 507万件規模の震源カタログをテキスト/JSONで持つと巨大になりすぎるため、
+// 固定長カラム＋差分エンコードの独自バイナリで保持している。
+// フォーマット（すべてリトルエンディアン）:
+//   int32  recordCount (N)
+//   int32  firstTs（Unix秒）
+//   [N-1] タイムスタンプ差分列:
+//     uint16 deltaOrEscape
+//       0xFFFF の場合はエスケープで、続けて int32 実差分値が入る
+//       それ以外はそのまま ts[i] = ts[i-1] + deltaOrEscape
+//   [N]   int16  lat_x100（緯度 * 100、精度0.01度のまま欠損なし）
+//   [N]   int16  lon_x100（経度 * 100、精度0.01度のまま欠損なし）
+//   [N]   depth列:
+//     uint16 depthOrEscape（深さ_km * 100）
+//       0xFFFF の場合はエスケープで、続けて int32 実値（depth_km*100）が入る
+//   [N]   int16  mag_x10（マグニチュード * 10、-999 はマグニチュード欠損を表すセンチネル）
+//
+// レコードは ts 昇順にソート済みが前提。緯度経度は小数点2桁、深さは小数点2桁、
+// マグニチュードは小数点1桁の精度をすべて可逆で保持している（丸めによる情報欠落なし）。
+function decodeHypoBinary(buf) {
+  const dv = new DataView(buf);
+  let off = 0;
+  const n = dv.getInt32(off, true); off += 4;
+  const firstTs = dv.getInt32(off, true); off += 4;
+
+  const ts = new Int32Array(n);
+  ts[0] = firstTs;
+  for (let i = 1; i < n; i++) {
+    let delta = dv.getUint16(off, true); off += 2;
+    if (delta === 0xFFFF) {
+      delta = dv.getInt32(off, true); off += 4;
+    }
+    ts[i] = ts[i - 1] + delta;
+  }
+
+  const lat = new Int16Array(n);
+  for (let i = 0; i < n; i++) { lat[i] = dv.getInt16(off, true); off += 2; }
+
+  const lon = new Int16Array(n);
+  for (let i = 0; i < n; i++) { lon[i] = dv.getInt16(off, true); off += 2; }
+
+  const depth = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    let d = dv.getUint16(off, true); off += 2;
+    if (d === 0xFFFF) {
+      d = dv.getInt32(off, true); off += 4;
+    }
+    depth[i] = d;
+  }
+
+  const mag = new Int16Array(n);
+  for (let i = 0; i < n; i++) { mag[i] = dv.getInt16(off, true); off += 2; }
+
+  return { n, ts, lat, lon, depth, mag };
+}
+
+// バイナリのデコード結果1件分を、normalizeFeature() の出力と同じ形状に直接組み立てる。
+// （GeoJSON Featureを経由せず、パース済み数値からそのまま構築することで無駄なJSON化を避ける）
+function hypoBinaryRecordToNormalized(cols, i) {
+  const lonV = cols.lon[i] / 100;
+  const latV = cols.lat[i] / 100;
+  const depthV = cols.depth[i] / 100;
+  const magRaw = cols.mag[i];
+  const magV = magRaw === -999 ? null : magRaw / 10;
+  const timeMs = cols.ts[i] * 1000;
+
+  const placeByCoord = lookupEpicenterName(lonV, latV) || lookupTeichiName(lonV, latV);
+  const place = placeByCoord || (lonV != null && latV != null && !isNaN(lonV) && !isNaN(latV) ? '遠地地震' : '不明');
+
+  return {
+    lon: lonV,
+    lat: latV,
+    depth: depthV,
+    mag: magV,
+    time: timeMs,
+    timeRaw: null,
+    place,
+    maxInt: null,
+    raw: null
+  };
+}
+
+// JST基準の "YYYY-MM-DD" 日付キーをUnix秒（UTC）から求める。
+// 既存のdayKey()はローカルTZ前提のDateオブジェクトから作るが、
+// バイナリはUTC epoch秒しか持たないため、+9時間したうえでUTC基準の年月日を取り出す。
+function dayKeyFromUtcSeconds(tsSec) {
+  const jstMs = tsSec * 1000 + 9 * 60 * 60 * 1000;
+  const d = new Date(jstMs);
+  const y = d.getUTCFullYear();
+  const mo = pad2(d.getUTCMonth() + 1);
+  const da = pad2(d.getUTCDate());
+  return `${y}-${mo}-${da}`;
+}
+
+async function loadHypoArchiveBinaryFile(archive) {
+  const res = await fetch(archive.url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} @ ${archive.url}`);
+  const ab = await res.arrayBuffer();
+
+  let bin;
+  try {
+    const ds = new DecompressionStream('gzip');
+    const stream = new Blob([ab]).stream().pipeThrough(ds);
+    bin = await new Response(stream).arrayBuffer();
+  } catch (e) {
+    // 解凍済みの生バイナリが返ってきた場合のフォールバック
+    bin = ab;
+  }
+
+  const cols = decodeHypoBinary(bin);
+
+  const byDay = new Map();
+  for (let i = 0; i < cols.n; i++) {
+    const feat = hypoBinaryRecordToNormalized(cols, i);
+    const key = dayKeyFromUtcSeconds(cols.ts[i]);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(feat);
+  }
+  for (const [key, feats] of byDay) {
+    hypoDayCache.set(key, { features: feats, error: null });
+  }
+  console.log(`バイナリアーカイブ読み込み完了 (${archive.url}): ${cols.n}件 / ${byDay.size}日分`);
+  return byDay;
 }
 
 // NDJSON（1行1レコード）を優先してパースし、ダメなら単一JSON配列としてフォールバックする。
@@ -1192,6 +1803,12 @@ function parseHypoArchiveText(text) {
 async function loadHypoArchiveFile(archive) {
   if (hypoArchiveLoadPromises.has(archive.url)) return hypoArchiveLoadPromises.get(archive.url);
   const promise = (async () => {
+    // 独自バイナリ形式（hypo_data*.bin.gz）は専用デコーダへ分岐する。
+    // NDJSON.gzとフォーマットが根本的に違うため、テキスト経由にせず直接ArrayBufferを扱う。
+    if (archive.format === 'bin') {
+      return loadHypoArchiveBinaryFile(archive);
+    }
+
     const res = await fetch(archive.url);
     if (!res.ok) throw new Error(`HTTP ${res.status} @ ${archive.url}`);
 
@@ -1229,6 +1846,71 @@ async function loadHypoArchiveFile(archive) {
   return promise;
 }
 
+// ------------------------------------------------------------------
+// 日別震源リストページ（daily_map）からの取得・パース
+// 2025/6/1〜「今日の8日前」の期間はこちらを使う（isDailyMapCoveredDate参照）。
+// ページ内の震源リストは固定幅テキストブロック（<pre>相当）で、1行1レコード：
+//   "YYYY  M D HH:MM SS.s  DD°MM.M'N/S DDD°MM.M'E/W  DEPTH   MAG  PLACE"
+// 深さ・Ｍが不明の場合は "-" になる。JMAはCORS制限がないため直接fetchする。
+// ------------------------------------------------------------------
+const DAILY_MAP_LINE_RE =
+  /(\d{4})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})\s+([\d.]+)\s+(\d{1,3})°\s*([\d.]+)'([NS])\s+(\d{1,3})°\s*([\d.]+)'([EW])\s+(-|\d+)\s+(-|-?[\d.]+)\s+(\S[^\n]*?)(?=\s{2,}|\d{4}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}:\d{2}\s+[\d.]+\s+\d|\n|$)/g;
+
+function dmsToDecimal(deg, min, hemi) {
+  const v = Number(deg) + Number(min) / 60;
+  return (hemi === 'S' || hemi === 'W') ? -v : v;
+}
+
+function parseDailyMapText(text, dateObj) {
+  const feats = [];
+  DAILY_MAP_LINE_RE.lastIndex = 0;
+  let m;
+  while ((m = DAILY_MAP_LINE_RE.exec(text)) !== null) {
+    const [, y, mo, d, hh, mi, ss, latDeg, latMin, latHemi, lonDeg, lonMin, lonHemi, depthStr, magStr, placeRaw] = m;
+    const lat = dmsToDecimal(latDeg, latMin, latHemi);
+    const lon = dmsToDecimal(lonDeg, lonMin, lonHemi);
+    const depth = depthStr === '-' ? null : Number(depthStr);
+    const mag = magStr === '-' ? null : Number(magStr);
+    const place = (placeRaw || '').trim() || null;
+
+    // 秒は小数を含むことがあるため切り捨てて整数秒として扱う（ミリ秒精度は元データ側で不要）。
+    const secInt = Math.floor(Number(ss));
+    const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mi), secInt) - 9 * 60 * 60 * 1000;
+
+    const placeByCoord = lookupEpicenterName(lon, lat) || lookupTeichiName(lon, lat);
+    const finalPlace = placeByCoord || place || (lon != null && lat != null && !isNaN(lon) && !isNaN(lat) ? '遠地地震' : '不明');
+
+    feats.push({
+      lon, lat,
+      depth: depth != null && !isNaN(depth) ? depth : null,
+      mag: mag != null && !isNaN(mag) ? mag : null,
+      time: utcMs,
+      timeRaw: null,
+      place: finalPlace,
+      maxInt: null,
+      raw: null
+    });
+  }
+  return feats;
+}
+
+async function fetchDailyMapDay(dateObj, { signal } = {}) {
+  const url = dailyMapUrlFor(dateObj);
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status} @ ${url}`);
+  const html = await res.text();
+  // 震源リストは <pre> や <details> などのブロック内に生テキストで入っているが、
+  // 正規表現自体がレコードパターンにしかマッチしないため、HTMLタグ混在下でも
+  // 実用上は安全に動作する。念のためHTMLエンティティだけデコードしておく。
+  const text = html
+    .replace(/&deg;/g, '°')
+    .replace(/&#176;/g, '°')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  return parseDailyMapText(text, dateObj);
+}
+
 function archiveForDate(dateObj) {
   // 境界（HYPO_ARCHIVES の startMs/endMs）もローカルTZ基準で定義しているため、
   // ここも同じくローカルTZの年月日でその日の開始・終了瞬間を求める。
@@ -1250,6 +1932,10 @@ async function fetchHypoDay(dateObj, { signal } = {}) {
     await loadHypoArchiveFile(archive);
     const cached = hypoDayCache.get(dayKey(dateObj));
     return cached ? cached.features : [];
+  }
+
+  if (isDailyMapCoveredDate(dateObj)) {
+    return fetchDailyMapDay(dateObj, { signal });
   }
 
   const url = hypoUrlFor(dateObj);
@@ -1314,6 +2000,45 @@ function buildFromCache(dates) {
 
 let sharedMap = null;
 let sharedDateRange = { startDate: null, endDate: null, startTime: null, endTime: null, rawFeatures: null };
+
+// M・深さによる絞り込み条件（震央マップ表示全体に適用）。
+// null は「絞り込みなし（無制限）」を意味する。
+// M不明・深さ不明（-1センチネル）のfeatureは、時刻不明と同様に絞り込み対象外として常に含める
+// （除外すると原因不明のデータ欠落に見えてしまうため）。
+let magDepthFilter = { minMag: null, maxMag: null, minDepth: null, maxDepth: null };
+
+function filterFeaturesByMagDepth(features) {
+  const { minMag, maxMag, minDepth, maxDepth } = magDepthFilter;
+  if (minMag == null && maxMag == null && minDepth == null && maxDepth == null) return features;
+  return features.filter(f => {
+    if (f.mag != null) {
+      if (minMag != null && f.mag < minMag) return false;
+      if (maxMag != null && f.mag > maxMag) return false;
+    }
+    if (f.depth != null && !isNaN(f.depth)) {
+      if (minDepth != null && f.depth < minDepth) return false;
+      if (maxDepth != null && f.depth > maxDepth) return false;
+    }
+    return true;
+  });
+}
+
+// 「現在の日時フィルタ済みfeatures」にM・深さ絞り込みだけを追加で適用し、再描画する。
+// データの再取得は行わず、sharedDateRange.rawFeatures から日時フィルタ→M/深さフィルタの順で組み立て直す。
+function reapplyMagDepthFilter() {
+  if (!sharedDateRange.rawFeatures) return;
+  const startStr = sharedDateRange.startDate;
+  const endStr = sharedDateRange.endDate;
+  if (!startStr || !endStr) return;
+  const byTime = filterFeaturesByDateTimeRange(
+    sharedDateRange.rawFeatures, startStr, endStr,
+    sharedDateRange.startTime || '00:00', sharedDateRange.endTime || '23:59'
+  );
+  const finalFeatures = filterFeaturesByMagDepth(byTime);
+  applySharedFeatures(finalFeatures);
+  const statusEl = document.getElementById('shared-date-status');
+  if (statusEl) statusEl.textContent = `${finalFeatures.length}件（M・深さで絞り込み中）`;
+}
 let epicenterState = { data: [], startDate: null, endDate: null };
 
 // circle-color（深さ基準グラデーション）とcircle-radius（マグニチュード基準）は
@@ -1359,6 +2084,7 @@ function applySharedFeatures(rawFeatures) {
     computeAndRenderBvalue();
   }
 }
+const boundary_color = '#000030';
 
 async function loadBaseGeoJsonLayers(worldDataPromise, prefDataPromise) {
   try {
@@ -1372,13 +2098,13 @@ async function loadBaseGeoJsonLayers(worldDataPromise, prefDataPromise) {
       id: 'base-world-fill',
       type: 'fill',
       source: 'base-world',
-      paint: { 'fill-color': '#4d5468', 'fill-opacity': 1 }
+      paint: { 'fill-color': '#8d8d8d', 'fill-opacity': 1 }
     });
     sharedMap.addLayer({
       id: 'base-world-line',
       type: 'line',
       source: 'base-world',
-      paint: { 'line-color': '#69708a', 'line-width': 0.6 }
+      paint: { 'line-color': boundary_color, 'line-width': 0.6 }
     });
 
     sharedMap.addSource('base-pref', { type: 'geojson', data: prefData });
@@ -1386,13 +2112,13 @@ async function loadBaseGeoJsonLayers(worldDataPromise, prefDataPromise) {
       id: 'base-pref-fill',
       type: 'fill',
       source: 'base-pref',
-      paint: { 'fill-color': '#4d5468', 'fill-opacity': 1 }
+      paint: { 'fill-color': '#8d8d8d', 'fill-opacity': 1 }
     });
     sharedMap.addLayer({
       id: 'base-pref-line',
       type: 'line',
       source: 'base-pref',
-      paint: { 'line-color': '#69708a', 'line-width': 0.6 }
+      paint: { 'line-color': boundary_color, 'line-width': 0.6 }
     });
 
     const baseLayerIds = [
@@ -1494,29 +2220,41 @@ function initSharedMap() {
       type: 'circle',
       source: 'quake-src',
       layout: {
-        // 描画順（大きい地震を上に）をMapLibre側に委譲。JS側でのsortが不要になる。
-        'circle-sort-key': ['coalesce', ['get', 'mag'], -999]
+        // 描画順：浅い地震ほど手前（上）に来るよう、深さの符号反転をソートキーにする。
+        // 深さ不明（-1センチネル）は深さ0kmと同じ扱い（最前面グループ）にする。
+        'circle-sort-key': [
+          'case',
+          ['<', ['get', 'depth'], 0], 0,
+          ['*', -1, ['get', 'depth']]
+        ]
       },
       paint: {
-        // マグニチュード基準の半径（旧magRadius相当：M0→3px, M7→22.4px, 上限22px）
+        // マグニチュード基準の半径（M1→3px 〜 M7→20px の目安で段階的に拡大）
         'circle-radius': [
           'interpolate', ['linear'], ['coalesce', ['get', 'mag'], 0],
-          0, 3,
-          7, 22
+          1, 3,
+          2, 5,
+          3, 7,
+          4, 10,
+          5, 13,
+          6, 16.5,
+          7, 20
         ],
-        // 深さ基準の色グラデーション（0〜700km、浅=暖色→深=寒色）。
+        // 深さ基準の色グラデーション（0〜700km、赤(浅)→橙→黄→緑→水色→青(深)）。
         // depth=-1（不明）はグレーにフォールバック。
         'circle-color': [
           'case',
           ['<', ['get', 'depth'], 0], '#8a8f9a',
           [
             'interpolate', ['linear'], ['get', 'depth'],
-            0,   '#ff5470',
-            30,  '#ff9f43',
-            70,  '#f9d55c',
-            150, '#39d98a',
-            300, '#4fc3f7',
-            700, '#7c4fe0'
+            0,   '#ff0000',
+            10,  '#ff8c00',
+            20,  '#ffd700',
+            30,  '#adff2f',
+            50,  '#00c853',
+            100, '#00bcd4',
+            200, '#1e88e5',
+            700, '#0d47a1'
           ]
         ],
         'circle-opacity': 0.65,
@@ -1554,7 +2292,7 @@ function initSharedMap() {
       id: 'bv-bbox-line',
       type: 'line',
       source: 'bv-bbox',
-      paint: { 'line-color': '#ff9f43', 'line-width': 1.6, 'line-dasharray': [2, 2] }
+      paint: { 'line-color': '#ff9f43', 'line-width': 1.6 }
     });
 
     sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'none');
@@ -1564,7 +2302,9 @@ function initSharedMap() {
     buildSharedDatePanel();
     buildEpicenterPanel();
     buildBvaluePanel();
-    applyResponsivePanelLayout();
+    // 初期表示（震央分布モード）に合わせて、トップバーの期間チップや
+    // 凡例ボタンの表示状態を確定させる。
+    activateView('view-epicenter');
   });
 }
 
@@ -1574,115 +2314,62 @@ function defaultDateStr(offsetDays = 0) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-const MOBILE_BREAKPOINT = 720;
-function isMobileLayout() { return window.innerWidth <= MOBILE_BREAKPOINT; }
-
-function applyResponsivePanelLayout() {
-  const mobile = isMobileLayout();
-  const panels = document.querySelectorAll('.floating-panel');
-  
-  panels.forEach(p => {
-    p.classList.toggle('mobile-stacked', mobile);
-    // デスクトップ時の本来の配置を記憶しておく
-    if (!p.dataset.desktopTop) p.dataset.desktopTop = p.style.top;
-    if (!p.dataset.desktopRight) p.dataset.desktopRight = p.style.right;
-    if (!p.dataset.desktopLeft) p.dataset.desktopLeft = p.style.left;
-  });
-
-  if (!mobile) {
-    // デスクトップ復帰時は、記憶しておいた本来の配置に戻す
-    panels.forEach(p => {
-      if (p.dataset.desktopTop) p.style.top = p.dataset.desktopTop;
-      if (p.dataset.desktopRight) p.style.right = p.dataset.desktopRight;
-      if (p.dataset.desktopLeft) p.style.left = p.dataset.desktopLeft;
-    });
-    return;
-  }
-
-  const MOBILE_TOP_GAP = 6;
-  const MOBILE_STACK_GAP = 6;
-  let cursorTop = MOBILE_TOP_GAP;
-
-  const sharedDatePanelRoot = document.getElementById('shared-date-panel-root');
-  const orderedPanels = [];
-  if (sharedDatePanelRoot && sharedDatePanelRoot.style.display !== 'none') {
-    orderedPanels.push(...sharedDatePanelRoot.querySelectorAll('.floating-panel'));
-  }
-  const activeView = document.querySelector('.view.active');
-  if (activeView) {
-    orderedPanels.push(...activeView.querySelectorAll('.floating-panel'));
-  }
-
-  orderedPanels.forEach(p => {
-    // b値の結果パネルは縦積みから除外し、画面右上に固定する
-    if (p.id === 'bv-result-panel') {
-      p.style.top = `${MOBILE_TOP_GAP}px`;
-      return; 
-    }
-    p.style.top = `${cursorTop}px`;
-    cursorTop += p.offsetHeight + MOBILE_STACK_GAP;
-  });
-}
-
-let responsiveLayoutResizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(responsiveLayoutResizeTimer);
-  responsiveLayoutResizeTimer = setTimeout(applyResponsivePanelLayout, 120);
-});
-
-// ステータステキストの折返し行数変化など、ウィンドウリサイズを伴わない
-// パネル高さの変化でも縦積み位置がズレないよう、各パネルの高さ変化を監視して
-// 常に再スタックする。（"◯件取得完了"のように文言長で行数が変わるケースの対策）
-let panelRestackTimer = null;
-const panelResizeObserver = new ResizeObserver(() => {
-  if (!isMobileLayout()) return;
-  clearTimeout(panelRestackTimer);
-  // 複数パネルが同時に変化しても1回にまとめる
-  panelRestackTimer = setTimeout(applyResponsivePanelLayout, 0);
-});
-function observePanelForRestack(panel) {
-  panelResizeObserver.observe(panel);
-}
+// 新UIシェルではパネルはメニュー/シート内に固定配置されるため、
+// 旧UIにあった「モバイル時に縦積みする」再配置ロジックは不要になった。
+// 呼び出し箇所を大きく変えずに済むよう、互換のための空関数として残す。
+function isMobileLayout() { return window.innerWidth <= 720; }
+function observePanelForRestack() { /* no-op: 新UIでは不要 */ }
 
 function buildSharedDatePanel() {
-  const container = document.getElementById('shared-date-panel-root');
-  const panel = document.createElement('div');
-  panel.className = 'floating-panel glass-panel';
-  panel.style.cssText = 'top:16px; left:16px; width:250px;';
+  const container = document.getElementById('period-sheet-body');
   const initStart = sharedDateRange.startDate || defaultDateStr(-7);
   const initEnd = sharedDateRange.endDate || defaultDateStr(0);
   const initStartTime = sharedDateRange.startTime || '00:00';
   const initEndTime = sharedDateRange.endTime || '23:59';
-  panel.innerHTML = `
-    <div class="panel-title"><span class="bar"></span>期間指定</div>
+  container.innerHTML = `
     <label class="field-label">開始日時</label>
     ${createDateTimeFieldHTML('shared-datetime-start', initStart, initStartTime)}
-    <div style="height:8px;"></div>
+    <div style="height:10px;"></div>
     <label class="field-label">終了日時</label>
     ${createDateTimeFieldHTML('shared-datetime-end', initEnd, initEndTime)}
-    <div style="height:12px;"></div>
+    <div style="height:14px;"></div>
     <button class="btn btn-accent" id="shared-date-fetch" style="width:100%;">データ取得</button>
     <div style="height:10px;"></div>
     <div class="status-text" id="shared-date-status">待機中</div>
   `;
-  container.appendChild(panel);
-  observePanelForRestack(panel);
 
   bindDateTimeField('shared-datetime-start');
   bindDateTimeField('shared-datetime-end');
 
   document.getElementById('shared-date-fetch').addEventListener('click', runSharedFetch);
+  updatePeriodChipLabel();
 
   if (sharedDateRange.rawFeatures) {
     runSharedFetch();
   }
 }
 
+// トップバーの期間チップ表示を、現在の共有期間の状態に合わせて更新する。
+function updatePeriodChipLabel(statusOverride) {
+  const textEl = document.getElementById('period-chip-text');
+  const dotEl = document.getElementById('period-chip-dot');
+  if (!textEl) return;
+  const { startDate, endDate } = sharedDateRange;
+  if (statusOverride) {
+    textEl.textContent = statusOverride;
+  } else if (startDate && endDate) {
+    textEl.textContent = (startDate === endDate) ? startDate : `${startDate} 〜 ${endDate}`;
+  } else {
+    textEl.textContent = '期間を選択';
+  }
+  if (dotEl) dotEl.className = 'period-status-dot' + (sharedDateRange.rawFeatures ? ' live' : '');
+}
+
 async function runSharedFetch() {
   try {
     await runSharedFetchInner();
   } finally {
-    if (isMobileLayout()) applyResponsivePanelLayout();
+    updatePeriodChipLabel();
   }
 }
 
@@ -1716,12 +2403,13 @@ async function runSharedFetchInner() {
   const dates = dateRange(startStr, endStr);
   if (dates.length === 0) { toast('日付範囲が不正です'); return; }
   // 92日上限はJMAへのライブfetch負荷を抑えるためのものなので、
-  // 全期間がアーカイブ（〜2025-12-31 23:59:59）でカバーされる場合は適用しない。
-  const allArchiveCovered = dates.every(isArchiveCoveredDate);
+  // 全期間がアーカイブ or daily_map（＝当日フィード以外の静的・準静的データ）で
+  // カバーされる場合は適用しない。
+  const allArchiveCovered = dates.every(d => isArchiveCoveredDate(d) || isDailyMapCoveredDate(d));
   if (!allArchiveCovered && dates.length > 92) { toast('一度に取得できるのは最大92日分です'); return; }
 
   if (sharedDateRange.rawFeatures && sharedDateRange.startDate === startStr && sharedDateRange.endDate === endStr) {
-    const filtered = filterFeaturesByDateTimeRange(sharedDateRange.rawFeatures, startStr, endStr, startTimeStr, endTimeStr);
+    const filtered = filterFeaturesByMagDepth(filterFeaturesByDateTimeRange(sharedDateRange.rawFeatures, startStr, endStr, startTimeStr, endTimeStr));
     sharedDateRange.startTime = startTimeStr;
     sharedDateRange.endTime = endTimeStr;
     applySharedFeatures(filtered);
@@ -1736,7 +2424,7 @@ async function runSharedFetchInner() {
     sharedDateRange.startTime = startTimeStr;
     sharedDateRange.endTime = endTimeStr;
     sharedDateRange.rawFeatures = features;
-    const filtered = filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr);
+    const filtered = filterFeaturesByMagDepth(filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr));
     applySharedFeatures(filtered);
     statusEl.textContent = `${filtered.length}件（キャッシュから即時反映）${errors.length ? `／${errors.length}日分は取得失敗` : ''}`;
     return;
@@ -1744,6 +2432,7 @@ async function runSharedFetchInner() {
 
   btn.disabled = true;
   statusEl.innerHTML = `<span class="spinner"></span> 取得中 0 / ${dates.length}`;
+  updatePeriodChipLabel('取得中…');
 
   const { features, errors, cacheHits } = await fetchHypoRange(dates, (done, total, errs, hits) => {
     statusEl.innerHTML = `<span class="spinner"></span> 取得中 ${done} / ${total}${hits ? `（キャッシュ ${hits}件）` : ''}`;
@@ -1755,7 +2444,7 @@ async function runSharedFetchInner() {
   sharedDateRange.startTime = startTimeStr;
   sharedDateRange.endTime = endTimeStr;
   sharedDateRange.rawFeatures = features;
-  const filtered = filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr);
+  const filtered = filterFeaturesByMagDepth(filterFeaturesByDateTimeRange(features, startStr, endStr, startTimeStr, endTimeStr));
   applySharedFeatures(filtered);
 
   if (errors.length > 0) {
@@ -1769,118 +2458,272 @@ async function runSharedFetchInner() {
   }
 }
 
+// 凡例（Mごとの円サイズ・深さの色分け）は、地図上の丸ボタンから開くポップオーバーへ注入する。
 function buildEpicenterPanel() {
-  const container = document.getElementById('view-epicenter');
-  const panel = document.createElement('div');
-  panel.className = 'floating-panel glass-panel';
-  const sharedPanelH = document.querySelector('#shared-date-panel-root .floating-panel');
-  const topOffset = sharedPanelH ? (sharedPanelH.offsetTop + sharedPanelH.offsetHeight + 12) : 16;
-  panel.style.cssText = `top:${topOffset}px; left:16px; width:250px;`;
-  panel.innerHTML = `
-    <button type="button" class="panel-title" id="epi-legend-toggle" style="
-      margin-bottom:0; width:100%; background:none; border:none; padding:0; cursor:pointer;
-      display:flex; align-items:center; justify-content:space-between; gap:6px;
-      font-family:var(--font-base); font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-2);
-    ">
-      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>凡例（深さ）</span>
-      <svg id="epi-legend-caret" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="transition:transform .2s ease;"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div id="epi-legend-body" style="margin-top:8px; display:none;">
-      <div class="legend-row"><span class="legend-swatch" style="background:#ff5470;"></span>0km</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#ff9f43;"></span>30km</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#f9d55c;"></span>70km</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#39d98a;"></span>150km</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#4fc3f7;"></span>300km</div>
-      <div class="legend-row"><span class="legend-swatch" style="background:#7c4fe0;"></span>700km〜</div>
-      <div class="legend-row" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border, rgba(255,255,255,0.12)); color:var(--text-2); font-size:10px;">円の大きさ＝マグニチュード</div>
+  const legendBody = document.getElementById('legend-popover-body');
+
+  // circle-radiusのpaint式と揃えたM1〜M7の半径（px）
+  const magRadii = [
+    { m: 1, r: 3 },
+    { m: 2, r: 5 },
+    { m: 3, r: 7 },
+    { m: 4, r: 10 },
+    { m: 5, r: 13 },
+    { m: 6, r: 16.5 },
+    { m: 7, r: 20 }
+  ];
+
+  legendBody.innerHTML = `
+    <div class="legend-mag-title">M</div>
+    <div class="legend-mag-row">
+      ${magRadii.map(({ m, r }) => `
+        <div class="legend-mag-item">
+          <div class="legend-mag-circle"><span style="width:${r * 2}px; height:${r * 2}px;"></span></div>
+          <div class="legend-mag-label">${m}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="legend-depth-title">Depth[km]</div>
+    <div class="legend-depth-bar"></div>
+    <div class="legend-depth-scale">
+      <span>0</span><span>10</span><span>20</span><span>30</span><span>50</span><span>100</span><span>200</span><span>700</span>
     </div>
   `;
-  container.appendChild(panel);
-  observePanelForRestack(panel);
 
-  const legendBody = panel.querySelector('#epi-legend-body');
-  const legendCaret = panel.querySelector('#epi-legend-caret');
-  const legendToggle = panel.querySelector('#epi-legend-toggle');
-  legendToggle.addEventListener('click', () => {
-    const isOpen = legendBody.style.display !== 'none';
-    legendBody.style.display = isOpen ? 'none' : 'block';
-    legendCaret.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-    if (isMobileLayout()) applyResponsivePanelLayout();
+  buildEpicenterFilterPanel();
+}
+
+// M・深さによる絞り込みを、ハンバーガーメニュー内のアコーディオンセクションとして構築する。
+function buildEpicenterFilterPanel() {
+  const container = document.getElementById('menu-sections-epi');
+  const section = document.createElement('div');
+  section.className = 'menu-section';
+  section.id = 'epi-filter-section';
+  section.innerHTML = `
+    <button type="button" class="menu-section-head">
+      <span class="menu-section-head-label">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+        絞り込み（M・深さ）
+      </span>
+      <span class="menu-section-head-right">
+        <span class="menu-section-badge" id="epi-filter-badge">適用中</span>
+        <svg class="menu-section-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </span>
+    </button>
+    <div class="menu-section-body">
+      <label class="field-label">マグニチュード（M）</label>
+      <div class="row">
+        <input type="number" id="epi-mag-min" step="0.1" placeholder="下限">
+        <span class="date-sep" style="align-self:center; flex:0 0 auto;">〜</span>
+        <input type="number" id="epi-mag-max" step="0.1" placeholder="上限">
+      </div>
+      <div style="height:10px;"></div>
+      <label class="field-label">深さ（km）</label>
+      <div class="row">
+        <input type="number" id="epi-depth-min" step="1" placeholder="下限">
+        <span class="date-sep" style="align-self:center; flex:0 0 auto;">〜</span>
+        <input type="number" id="epi-depth-max" step="1" placeholder="上限">
+      </div>
+      <div style="height:10px;"></div>
+      <div class="status-text" id="epi-filter-count" style="font-size:10.5px;"></div>
+      <div style="height:8px;"></div>
+      <button class="btn btn-sm" id="epi-filter-reset" style="width:100%;">リセット</button>
+    </div>
+  `;
+  container.appendChild(section);
+  bindAccordionSection(section);
+
+  const magMinEl = section.querySelector('#epi-mag-min');
+  const magMaxEl = section.querySelector('#epi-mag-max');
+  const depthMinEl = section.querySelector('#epi-depth-min');
+  const depthMaxEl = section.querySelector('#epi-depth-max');
+  const countEl = section.querySelector('#epi-filter-count');
+  const badgeEl = section.querySelector('#epi-filter-badge');
+
+  function updateFilterCountLabel() {
+    const { minMag, maxMag, minDepth, maxDepth } = magDepthFilter;
+    const hasFilter = minMag != null || maxMag != null || minDepth != null || maxDepth != null;
+    if (!hasFilter) {
+      countEl.textContent = '';
+      badgeEl.classList.remove('show');
+    } else {
+      countEl.textContent = `${epicenterState.data.length}件を表示中`;
+      badgeEl.classList.add('show');
+    }
+  }
+
+  function readAndApply() {
+    const toNumOrNull = (el) => {
+      const v = el.value.trim();
+      if (v === '') return null;
+      const n = Number(v);
+      return isNaN(n) ? null : n;
+    };
+    magDepthFilter = {
+      minMag: toNumOrNull(magMinEl),
+      maxMag: toNumOrNull(magMaxEl),
+      minDepth: toNumOrNull(depthMinEl),
+      maxDepth: toNumOrNull(depthMaxEl)
+    };
+    reapplyMagDepthFilter();
+    updateFilterCountLabel();
+  }
+
+  [magMinEl, magMaxEl, depthMinEl, depthMaxEl].forEach(el => {
+    el.addEventListener('input', readAndApply);
+  });
+
+  section.querySelector('#epi-filter-reset').addEventListener('click', () => {
+    magMinEl.value = '';
+    magMaxEl.value = '';
+    depthMinEl.value = '';
+    depthMaxEl.value = '';
+    readAndApply();
   });
 }
 
 let bvalueState = {
   data: [],
   bbox: null,
+  polygon: null, // フリーハンド選択の座標配列 [[lon,lat], ...]（閉じた輪）
   drawing: false,
   drawStart: null
 };
 
 function setupBboxDrawing() {
-  let startLngLat = null;
+  let freehandPoints = null; // ドラッグ中に蓄積する [lng,lat] の配列
+  let isDraggingFreehand = false;
+  let pendingRafId = null;
 
-  function bboxPolygon(a, b) {
-    const minLon = Math.min(a.lng, b.lng), maxLon = Math.max(a.lng, b.lng);
-    const minLat = Math.min(a.lat, b.lat), maxLat = Math.max(a.lat, b.lat);
+  // base-world/base-pref はGeoJSON取得後（非同期）に quake-circles の直前へ
+  // moveLayer されるため、その完了タイミング次第で bv-bbox 系レイヤーより
+  // 手前（上）に来てしまい、不透明なベース地図がbboxの矩形を覆い隠すことがある。
+  // 描画のたびに最前面へ出し直すことで、読み込み順に依存せず常に見えるようにする。
+  function bringSelectionLayersToFront() {
+    if (sharedMap.getLayer('bv-bbox-fill')) {
+      sharedMap.moveLayer('bv-bbox-fill');
+      sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'visible');
+    }
+    if (sharedMap.getLayer('bv-bbox-line')) {
+      sharedMap.moveLayer('bv-bbox-line');
+      sharedMap.setLayoutProperty('bv-bbox-line', 'visibility', 'visible');
+    }
+  }
+
+  function polygonGeoJSON(ring) {
     return {
-      bbox: [minLon, minLat, maxLon, maxLat],
-      geojson: {
-        type: 'FeatureCollection',
-        features: [{
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[[minLon, minLat], [maxLon, minLat], [maxLon, maxLat], [minLon, maxLat], [minLon, minLat]]]
-          },
-          properties: {}
-        }]
-      }
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        properties: {}
+      }]
     };
   }
 
   function finishDrawing() {
-    startLngLat = null;
+    freehandPoints = null;
+    isDraggingFreehand = false;
+    if (pendingRafId != null) { cancelAnimationFrame(pendingRafId); pendingRafId = null; }
     bvalueState.drawing = false;
     const btn = document.getElementById('bv-draw-btn');
     if (btn) { btn.classList.remove('btn-accent'); btn.textContent = '領域選択'; }
     sharedMap.getCanvas().style.cursor = '';
+    sharedMap.dragPan.enable();
   }
 
-  function onClick(e) {
+  function onMouseDown(e) {
     if (!bvalueState.drawing) return;
-    if (!startLngLat) {
-      startLngLat = e.lngLat;
-      const btn = document.getElementById('bv-draw-btn');
-      if (btn) btn.textContent = '2点目クリック';
-    } else {
-      const { bbox, geojson } = bboxPolygon(startLngLat, e.lngLat);
-      sharedMap.getSource('bv-bbox').setData(geojson);
-      // base-world/base-pref はGeoJSON取得後（非同期）に quake-circles の直前へ
-      // moveLayer されるため、その完了タイミング次第で bv-bbox 系レイヤーより
-      // 手前（上）に来てしまい、不透明なベース地図がbboxの矩形を覆い隠すことがある。
-      // 描画のたびに最前面へ出し直すことで、読み込み順に依存せず常に見えるようにする。
-      if (sharedMap.getLayer('bv-bbox-fill')) {
-        sharedMap.moveLayer('bv-bbox-fill');
-        sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'visible');
-      }
-      if (sharedMap.getLayer('bv-bbox-line')) {
-        sharedMap.moveLayer('bv-bbox-line');
-        sharedMap.setLayoutProperty('bv-bbox-line', 'visibility', 'visible');
-      }
-      bvalueState.bbox = bbox;
-      finishDrawing();
-      updateBboxLabel();
-      computeAndRenderBvalue();
-    }
+    isDraggingFreehand = true;
+    freehandPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    sharedMap.dragPan.disable();
+    e.preventDefault();
   }
 
-  sharedMap.on('click', onClick);
+  // mousemoveは高頻度で発火するため、setData（GeoJSON再構築を伴う重い処理）は
+  // requestAnimationFrameで間引いて1フレームにつき最大1回に抑える。
+  function scheduleDrawUpdate() {
+    if (pendingRafId != null) return;
+    pendingRafId = requestAnimationFrame(() => {
+      pendingRafId = null;
+      if (!freehandPoints) return;
+      const ring = freehandPoints.length > 2
+        ? [...freehandPoints, freehandPoints[0]]
+        : freehandPoints;
+      sharedMap.getSource('bv-bbox').setData(polygonGeoJSON(ring));
+      bringSelectionLayersToFront();
+    });
+  }
+
+  function onMouseMove(e) {
+    if (!isDraggingFreehand || !freehandPoints) return;
+    const last = freehandPoints[freehandPoints.length - 1];
+    const next = [e.lngLat.lng, e.lngLat.lat];
+    // 直前の点とほぼ同じ位置なら間引く（点数を減らして描画・判定を軽くする）
+    if (Math.abs(next[0] - last[0]) < 1e-4 && Math.abs(next[1] - last[1]) < 1e-4) return;
+    freehandPoints.push(next);
+    scheduleDrawUpdate();
+  }
+
+  function onMouseUp() {
+    if (!isDraggingFreehand || !freehandPoints) return;
+    isDraggingFreehand = false;
+    if (pendingRafId != null) { cancelAnimationFrame(pendingRafId); pendingRafId = null; }
+    if (freehandPoints.length >= 3) {
+      const ring = simplifyRing([...freehandPoints, freehandPoints[0]]);
+      sharedMap.getSource('bv-bbox').setData(polygonGeoJSON(ring));
+      bringSelectionLayersToFront();
+      bvalueState.polygon = ring;
+      bvalueState.bbox = ringToBbox(ring);
+    } else {
+      // 3点未満（単なるクリック等）は選択とみなさない
+      sharedMap.getSource('bv-bbox').setData({ type: 'FeatureCollection', features: [] });
+    }
+    freehandPoints = null;
+    finishDrawing();
+    updateBboxLabel();
+    computeAndRenderBvalue();
+  }
+
+  sharedMap.on('mousedown', onMouseDown);
+  sharedMap.on('mousemove', onMouseMove);
+  sharedMap.on('mouseup', onMouseUp);
+  // タッチ操作（モバイル）にも対応
+  sharedMap.on('touchstart', onMouseDown);
+  sharedMap.on('touchmove', onMouseMove);
+  sharedMap.on('touchend', onMouseUp);
 
   bvalueState._cancelDrawing = () => { finishDrawing(); };
   bvalueState._onDrawModeChanged = (isDrawing) => {
-    if (!isDrawing) finishDrawing();
-    else sharedMap.getCanvas().style.cursor = 'crosshair';
+    if (!isDrawing) { finishDrawing(); return; }
+    sharedMap.getCanvas().style.cursor = 'crosshair';
   };
+}
+
+function ringToBbox(ring) {
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  for (const [lon, lat] of ring) {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+// フリーハンド描画で蓄積された頂点列を間引く。
+// 一定間隔ごとに1点を残す簡易サンプリングで、判定・描画の負荷を抑える。
+// （厳密なDouglas-Peuckerではないが、フリーハンド領域選択の用途では十分）
+function simplifyRing(ring, maxPoints = 300) {
+  if (ring.length <= maxPoints) return ring;
+  const step = ring.length / maxPoints;
+  const simplified = [];
+  for (let i = 0; i < maxPoints; i++) {
+    simplified.push(ring[Math.floor(i * step)]);
+  }
+  // 閉じた輪を保証（始点と終点を一致させる）
+  simplified.push(ring[0]);
+  return simplified;
 }
 
 function updateBboxLabel() {
@@ -1888,43 +2731,45 @@ function updateBboxLabel() {
   if (!el) return;
   if (!bvalueState.bbox) { el.textContent = '未選択'; return; }
   const [minLon, minLat, maxLon, maxLat] = bvalueState.bbox;
-  el.textContent = `${minLat.toFixed(2)}〜${maxLat.toFixed(2)}°N, ${minLon.toFixed(2)}〜${maxLon.toFixed(2)}°E`;
+  const rangeText = `${minLat.toFixed(2)}〜${maxLat.toFixed(2)}°N, ${minLon.toFixed(2)}〜${maxLon.toFixed(2)}°E`;
+  el.textContent = bvalueState.polygon ? `フリーハンド範囲（${rangeText}）` : rangeText;
 }
 
 function buildBvaluePanel() {
+  // 「領域選択／クリア」は地図の操作に直結するため、メニューに隠さず
+  // b値解析モード専用のコンパクトな操作バーとして地図下部に常設する。
   const container = document.getElementById('view-bvalue');
 
-  const panel = document.createElement('div');
-  panel.className = 'floating-panel glass-panel';
-  const sharedPanelHb = document.querySelector('#shared-date-panel-root .floating-panel');
-  const topOffsetB = sharedPanelHb ? (sharedPanelHb.offsetTop + sharedPanelHb.offsetHeight + 12) : 16;
-  panel.style.cssText = `top:${topOffsetB}px; left:16px; width:250px;`;
-  panel.innerHTML = `
-    <div class="panel-title"><span class="bar"></span>解析対象領域</div>
-    <div class="row">
-      <button class="btn btn-sm" id="bv-draw-btn" style="white-space:nowrap;">領域選択</button>
-      <button class="btn btn-sm" id="bv-clear-btn" style="white-space:nowrap;">クリア</button>
-    </div>
-    <div style="height:6px;"></div>
-    <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base);">未選択</div>
+  const toolbar = document.createElement('div');
+  toolbar.id = 'bv-toolbar';
+  toolbar.className = 'glass-popover';
+  toolbar.style.cssText = `
+    position:absolute; left:50%; bottom:calc(16px + env(safe-area-inset-bottom, 0px));
+    transform:translateX(-50%); z-index:70;
+    display:flex; align-items:center; gap:10px;
+    padding:9px 12px; max-width:92vw;
   `;
-  container.appendChild(panel);
-  observePanelForRestack(panel);
+  toolbar.innerHTML = `
+    <button class="btn btn-sm" id="bv-draw-btn" style="white-space:nowrap;">領域選択</button>
+    <button class="btn btn-sm" id="bv-clear-btn" style="white-space:nowrap;">クリア</button>
+    <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:36vw;">未選択</div>
+  `;
+  container.appendChild(toolbar);
 
-  const resultPanel = document.createElement('div');
-  resultPanel.id = 'bv-result-panel';
-  resultPanel.className = 'floating-panel glass-panel';
-  resultPanel.style.cssText = 'top:16px; right:16px; width:270px;';
-  resultPanel.innerHTML = `
-    <button type="button" class="panel-title" id="bv-result-toggle" style="
-      margin-bottom:0; width:100%; background:none; border:none; padding:0; cursor:pointer;
-      display:flex; align-items:center; justify-content:space-between; gap:6px;
-      font-family:var(--font-base); font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-2);
-    ">
-      <span style="display:flex; align-items:center; gap:6px;"><span class="bar"></span>b値 — Aki's MLE</span>
-      <svg id="bv-result-caret" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="transition:transform .2s ease; transform:rotate(180deg);"><path d="M6 9l6 6 6-6"/></svg>
+  // Mc設定とb値の解析結果はハンバーガーメニュー内のセクションへ。
+  const menuContainer = document.getElementById('menu-sections-bv');
+  const resultSection = document.createElement('div');
+  resultSection.className = 'menu-section expanded';
+  resultSection.id = 'bv-result-section';
+  resultSection.innerHTML = `
+    <button type="button" class="menu-section-head">
+      <span class="menu-section-head-label">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
+        b値解析結果 — Aki's MLE
+      </span>
+      <svg class="menu-section-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-    <div id="bv-result-body" style="margin-top:10px; display:block;">
+    <div class="menu-section-body">
       <label class="field-label">Mc（マグニチュード完全性閾値）</label>
       <div class="row">
         <select id="bv-mc-mode" style="flex:1.2;">
@@ -1940,25 +2785,14 @@ function buildBvaluePanel() {
       </div>
     </div>
   `;
-  container.appendChild(resultPanel);
-  observePanelForRestack(resultPanel);
-
-  const bvResultBody = resultPanel.querySelector('#bv-result-body');
-  const bvResultCaret = resultPanel.querySelector('#bv-result-caret');
-  const bvResultToggle = resultPanel.querySelector('#bv-result-toggle');
-  
-  bvResultToggle.addEventListener('click', () => {
-    const isOpen = bvResultBody.style.display !== 'none';
-    bvResultBody.style.display = isOpen ? 'none' : 'block';
-    bvResultCaret.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-    if (isMobileLayout()) applyResponsivePanelLayout();
-  });
+  menuContainer.appendChild(resultSection);
+  bindAccordionSection(resultSection);
 
   document.getElementById('bv-draw-btn').addEventListener('click', () => {
     bvalueState.drawing = !bvalueState.drawing;
     const btn = document.getElementById('bv-draw-btn');
     btn.classList.toggle('btn-accent', bvalueState.drawing);
-    btn.textContent = bvalueState.drawing ? '1点目クリック' : '領域選択';
+    btn.textContent = bvalueState.drawing ? 'ドラッグで描画' : '領域選択';
     if (bvalueState._onDrawModeChanged) bvalueState._onDrawModeChanged(bvalueState.drawing);
   });
   
@@ -1970,6 +2804,7 @@ function buildBvaluePanel() {
   
   document.getElementById('bv-clear-btn').addEventListener('click', () => {
     bvalueState.bbox = null;
+    bvalueState.polygon = null;
     sharedMap.getSource('bv-bbox').setData({ type: 'FeatureCollection', features: [] });
     updateBboxLabel();
     computeAndRenderBvalue();
@@ -1992,6 +2827,28 @@ function pointInBbox(lon, lat, bbox) {
   if (!bbox) return true;
   const [minLon, minLat, maxLon, maxLat] = bbox;
   return lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat;
+}
+
+// レイキャスティング法による point-in-polygon 判定（ring: [[lon,lat],...] の閉じた輪）
+function pointInPolygonRing(lon, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// フリーハンドで選択したポリゴンによる判定。まずbboxで粗く絞り込んでから
+// 厳密なポリゴン判定を行うことで、大量データでの計算量を抑える。
+function pointInSelection(lon, lat, state) {
+  if (!state.bbox) return true;
+  if (!pointInBbox(lon, lat, state.bbox)) return false;
+  if (!state.polygon) return true;
+  return pointInPolygonRing(lon, lat, state.polygon);
 }
 
 function estimateMcMaxCurvature(mags, binWidth = 0.1) {
@@ -2110,11 +2967,7 @@ function assessBvalueReliability(n, b) {
 }
 
 function computeAndRenderBvalue() {
-  try {
-    computeAndRenderBvalueInner();
-  } finally {
-    if (isMobileLayout()) applyResponsivePanelLayout();
-  }
+  computeAndRenderBvalueInner();
 }
 
 function computeAndRenderBvalueInner() {
@@ -2126,7 +2979,7 @@ function computeAndRenderBvalueInner() {
     return;
   }
 
-  const filtered = bvalueState.data.filter(f => pointInBbox(f.lon, f.lat, bvalueState.bbox));
+  const filtered = bvalueState.data.filter(f => pointInSelection(f.lon, f.lat, bvalueState));
   const mags = filtered.map(f => f.mag).filter(m => m != null);
 
   if (mags.length < 5) {
@@ -2445,28 +3298,6 @@ function drawBeachballFrameAndLabels(ctx, strikeDeg, dipDeg, rakeDeg, size, cx, 
   ctx.fillText('S', cx, cy + compassR);
   ctx.fillText('E', cx + compassR, cy);
   ctx.fillText('W', cx - compassR, cy);
-
-  const axes = computePTAxes(strikeDeg, dipDeg, rakeDeg);
-  const axisFontSize = Math.round(size * 0.08);
-  ctx.font = `bold ${axisFontSize}px ${getComputedStyle(document.body).fontFamily || 'sans-serif'}`;
-  const axisR = R * 0.55;
-
-  function drawAxisLabel(label, az, toff, isOnDark) {
-    const pos = projectLowerHemisphere(az, toff, cx, cy, R);
-    const dx = pos.x - cx, dy = pos.y - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const clampedDist = Math.min(dist, axisR);
-    const scale = dist > 0 ? clampedDist / dist : 0;
-    const lx = cx + dx * scale;
-    const ly = cy + dy * scale;
-    ctx.fillStyle = isOnDark ? '#ffffff' : '#000000';
-    ctx.fillText(label, lx, ly);
-  }
-
-  const pIsDark = pPolarity(strikeDeg, dipDeg, rakeDeg, axes.P.az, axes.P.toff) > 0;
-  const tIsDark = pPolarity(strikeDeg, dipDeg, rakeDeg, axes.T.az, axes.T.toff) > 0;
-  drawAxisLabel('P', axes.P.az, axes.P.toff, pIsDark);
-  drawAxisLabel('T', axes.T.az, axes.T.toff, tIsDark);
 }
 
 // 同期版（フォールバック・互換用に残置。Workerが使えない環境や即時描画が必要な場合に利用）
@@ -3167,7 +3998,7 @@ async function initMechView() {
     <div class="mech-layout">
       <div class="mech-list-col">
         <div class="glass-panel" style="padding:18px;">
-          <div class="panel-title"><span class="bar"></span>震源球 — 主な地震の発震機構解（速報値・JMA直近5日間 / USGS世界全体 M${USGS_MIN_MAGNITUDE}+）</div>
+          <div class="panel-title">震源球 — 主な地震の発震機構解（速報値・JMA直近5日間 / USGS世界全体 M${USGS_MIN_MAGNITUDE}+）</div>
           <div class="status-text" id="mech-status"><span class="spinner"></span> データを取得中...</div>
           <div id="mech-list"></div>
         </div>
