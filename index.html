@@ -214,6 +214,49 @@ html,body{
   pointer-events:auto;
 }
 
+/* ---- b値ツールバー内の簡易表示チップ＆詳細ポップオーバー ---- */
+.bv-summary-chip{
+  display:flex; align-items:center; gap:6px;
+  padding:6px 10px;
+  border-radius:100px;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.14);
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background .15s ease;
+}
+.bv-summary-chip:hover{ background:rgba(255,255,255,0.1); }
+.bv-summary-chip:active{ transform:scale(0.97); }
+.bv-summary-chip .bv-summary-dot{
+  width:7px; height:7px; border-radius:50%;
+  background:var(--text-2); flex-shrink:0;
+}
+.bv-summary-chip .bv-summary-dot.ok{ background:var(--safe); }
+.bv-summary-chip .bv-summary-dot.caution{ background:var(--text-2); }
+.bv-summary-chip .bv-summary-dot.warn{ background:var(--accent); }
+.bv-summary-chip .bv-summary-dot.danger{ background:var(--danger); box-shadow:0 0 6px rgba(255,77,79,0.6); }
+.bv-summary-chip .bv-summary-caret{ width:12px; height:12px; stroke:var(--text-2); fill:none; stroke-width:2.2; transition:transform .18s ease; }
+.bv-summary-chip.open .bv-summary-caret{ transform:rotate(180deg); }
+
+.bv-detail-popover{
+  position:absolute;
+  left:50%; bottom:calc(100% + 10px);
+  transform:translateX(-50%) scale(0.94) translateY(6px);
+  transform-origin:bottom center;
+  width:min(320px, 88vw);
+  padding:16px;
+  opacity:0;
+  pointer-events:none;
+  transition:transform .16s cubic-bezier(.2,.8,.3,1.3), opacity .14s ease;
+  max-height:min(60vh, 420px);
+  overflow-y:auto;
+}
+.bv-detail-popover.open{
+  transform:translateX(-50%) scale(1) translateY(0);
+  opacity:1;
+  pointer-events:auto;
+}
+
 /* ---- ハンバーガーメニュー / ドロワー ---- */
 .menu-scrim{
   position:absolute; inset:0;
@@ -899,74 +942,10 @@ const GEOJSON_PLATE_BOUNDARIES_URL = 'plate-boundaries.geojson';
 
 const JAPAN_CENTER = [138.5, 37.0];
 
-let epinameGrid = null;
-let epinameNames = null;
-let epinameSortedLatKeys = null;
-let epinameLoadPromise = null;
-
-let teichiRegions = null; // 遠地(海外)区分ポリゴン: [{id, name, polygons: [[[lon,lat],...], ...]}]
+let teichiRegions = null; // 震央地名区分ポリゴン（国内・遠地とも全域これに統一）: [{id, name, polygons: [[[lon,lat],...], ...]}]
 let teichiLoadPromise = null;
 
-function parseEpinameData() {
-  const rawNames = window.EPINAME_LIST;
-  const rawGrid = window.EPINAME_GRID_RAW;
-  if (!rawNames || !rawGrid) throw new Error('EPINAME data not found');
-
-  epinameNames = rawNames;
-  epinameGrid = new Map();
-
-  const latRows = rawGrid.split(';');
-  for (const row of latRows) {
-    if (!row) continue;
-    const colonIdx = row.indexOf(':');
-    const latKey = parseInt(row.slice(0, colonIdx), 36);
-    const entriesStr = row.slice(colonIdx + 1);
-    const entries = [];
-    let prevLon = 0;
-    if (entriesStr) {
-      for (const pair of entriesStr.split(',')) {
-        const [diffStr, idxStr] = pair.split('_');
-        const diff = parseInt(diffStr, 36);
-        const idx = parseInt(idxStr, 36);
-        prevLon += diff;
-        entries.push([prevLon, idx]);
-      }
-    }
-    epinameGrid.set(latKey, entries);
-  }
-  epinameSortedLatKeys = Array.from(epinameGrid.keys()).sort((a, b) => a - b);
-}
-
-async function loadEpinameData() {
-  if (epinameLoadPromise) return epinameLoadPromise;
-  epinameLoadPromise = (async () => {
-    try {
-      if (!window.EPINAME_LIST || !window.EPINAME_GRID_RAW) {
-        await loadScriptOnce('epiname_data.js');
-      }
-      parseEpinameData();
-    } catch (e) {
-      console.error('震央地名データの読み込みに失敗しました:', e);
-      toast('震央地名データの読み込みに失敗しました');
-    }
-  })();
-  return epinameLoadPromise;
-}
-
-function loadScriptOnce(src) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[data-epiname-src="${src}"]`);
-    if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); return; }
-    const el = document.createElement('script');
-    el.src = src;
-    el.dataset.epinameSrc = src;
-    el.onload = resolve;
-    el.onerror = reject;
-    document.head.appendChild(el);
-  });
-}
-
-// 遠地(海外)区分ポリゴンの読み込み (出典: 0Quake/JMA_Region, CC0 / 気象庁「地震情報で用いる震央地名」別紙３準拠)
+// 震央地名区分ポリゴンの読み込み (出典: 0Quake/JMA_Region, CC0 / 気象庁「地震情報で用いる震央地名」別紙３準拠)
 async function loadTeichiRegions() {
   if (teichiLoadPromise) return teichiLoadPromise;
   teichiLoadPromise = (async () => {
@@ -1018,47 +997,6 @@ function lookupTeichiName(lon, lat) {
     }
   }
   return null;
-}
-
-function nearestIndexSorted(sortedArr, value) {
-  let lo = 0, hi = sortedArr.length - 1;
-  if (hi < 0) return -1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (sortedArr[mid] < value) lo = mid + 1; else hi = mid;
-  }
-  if (lo > 0) {
-    const prev = sortedArr[lo - 1];
-    const cur = sortedArr[lo];
-    if (Math.abs(prev - value) <= Math.abs(cur - value)) return lo - 1;
-  }
-  return lo;
-}
-
-function lookupEpicenterName(lon, lat) {
-  if (lon == null || lat == null || isNaN(lon) || isNaN(lat)) return null;
-  if (!epinameGrid || !epinameSortedLatKeys || !epinameNames) return null;
-  if (epinameSortedLatKeys.length === 0) return null;
-
-  const EPS = 1e-6;
-  const latKeyF = lat * 60 + EPS;
-  const latIdx = nearestIndexSorted(epinameSortedLatKeys, latKeyF);
-  if (latIdx < 0) return null;
-  const latKey = epinameSortedLatKeys[latIdx];
-  const entries = epinameGrid.get(latKey);
-  if (!entries || entries.length === 0) return null;
-
-  const lonKeyF = lon * 60 + EPS;
-  let idx = -1;
-  let loI = 0, hiI = entries.length - 1;
-  while (loI <= hiI) {
-    const mid = (loI + hiI) >> 1;
-    if (entries[mid][0] <= lonKeyF) { idx = mid; loI = mid + 1; } else { hiI = mid - 1; }
-  }
-  // lonKeyF が全エントリの最小経度より小さい場合、範囲外なのでフォールバックせず null を返す
-  if (idx < 0) return null;
-  const nameIdx = entries[idx][1];
-  return epinameNames[nameIdx] || null;
 }
 
 function toast(msg, ms = 4200) {
@@ -1562,7 +1500,7 @@ function normalizeFeature(feature) {
   const mag = Number(pickProp(p, ['mag', 'magnitude', 'Magunitude', 'M'], NaN));
   const timeRaw = pickProp(p, ['time', 'origin_time', 'at', 'date'], null);
   const placeRaw = pickProp(p, ['place', 'epi', 'region', 'name'], null);
-  const placeByCoord = lookupEpicenterName(lon, lat) || lookupTeichiName(lon, lat);
+  const placeByCoord = lookupTeichiName(lon, lat);
   const place = placeByCoord || placeRaw || (lon != null && lat != null && !isNaN(lon) && !isNaN(lat) ? '遠地地震' : '不明');
   const maxInt = pickProp(p, ['maxInt', 'max_int', 'maxi', 'intensity'], null);
 
@@ -1720,7 +1658,7 @@ function hypoBinaryRecordToNormalized(cols, i) {
   const magV = magRaw === -999 ? null : magRaw / 10;
   const timeMs = cols.ts[i] * 1000;
 
-  const placeByCoord = lookupEpicenterName(lonV, latV) || lookupTeichiName(lonV, latV);
+  const placeByCoord = lookupTeichiName(lonV, latV);
   const place = placeByCoord || (lonV != null && latV != null && !isNaN(lonV) && !isNaN(latV) ? '遠地地震' : '不明');
 
   return {
@@ -1879,7 +1817,7 @@ function parseDailyMapText(text, dateObj) {
     const secInt = Math.floor(Number(ss));
     const utcMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mi), secInt) - 9 * 60 * 60 * 1000;
 
-    const placeByCoord = lookupEpicenterName(lon, lat) || lookupTeichiName(lon, lat);
+    const placeByCoord = lookupTeichiName(lon, lat);
     const finalPlace = placeByCoord || place || (lon != null && lat != null && !isNaN(lon) && !isNaN(lat) ? '遠地地震' : '不明');
 
     feats.push({
@@ -1927,7 +1865,7 @@ function isArchiveCoveredDate(dateObj) {
 }
 
 async function fetchHypoDay(dateObj, { signal } = {}) {
-  await Promise.all([loadEpinameData(), loadTeichiRegions()]);
+  await loadTeichiRegions();
 
   const archive = archiveForDate(dateObj);
   if (archive) {
@@ -2739,8 +2677,9 @@ function updateBboxLabel() {
 }
 
 function buildBvaluePanel() {
-  // 「領域選択／クリア」は地図の操作に直結するため、メニューに隠さず
-  // b値解析モード専用のコンパクトな操作バーとして地図下部に常設する。
+  // 「領域選択／クリア」と解析結果は、地図の操作に直結し確認頻度も高いため
+  // メニューに隠さず、b値解析モード専用のコンパクトな操作バーとして地図下部に常設する。
+  // 結果はチップで簡潔表示し、タップでツールバー上に詳細ポップオーバーを開く。
   const container = document.getElementById('view-bvalue');
 
   const toolbar = document.createElement('div');
@@ -2755,24 +2694,17 @@ function buildBvaluePanel() {
   toolbar.innerHTML = `
     <button class="btn btn-sm" id="bv-draw-btn" style="white-space:nowrap;">領域選択</button>
     <button class="btn btn-sm" id="bv-clear-btn" style="white-space:nowrap;">クリア</button>
-    <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:36vw;">未選択</div>
-  `;
-  container.appendChild(toolbar);
-
-  // Mc設定とb値の解析結果はハンバーガーメニュー内のセクションへ。
-  const menuContainer = document.getElementById('menu-sections-bv');
-  const resultSection = document.createElement('div');
-  resultSection.className = 'menu-section expanded';
-  resultSection.id = 'bv-result-section';
-  resultSection.innerHTML = `
-    <button type="button" class="menu-section-head">
-      <span class="menu-section-head-label">
-        <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
+    <div class="status-text font-num" id="bv-bbox-label" style="font-family:var(--font-base); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:28vw;">未選択</div>
+    <div class="bv-summary-chip" id="bv-summary-chip" role="button" tabindex="0" aria-label="b値の詳細を表示">
+      <span class="bv-summary-dot" id="bv-summary-dot"></span>
+      <span class="font-num" id="bv-summary-text" style="font-family:var(--font-base); font-size:12.5px; font-weight:700; color:var(--text-0);">領域未選択</span>
+      <svg class="bv-summary-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div class="glass-popover bv-detail-popover" id="bv-detail-popover">
+      <div class="panel-title" style="margin-bottom:8px;">
+        <svg viewBox="0 0 24 24" style="width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.8; vertical-align:-2px; margin-right:4px;"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
         b値解析結果 — Aki's MLE
-      </span>
-      <svg class="menu-section-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div class="menu-section-body">
+      </div>
       <label class="field-label">Mc（マグニチュード完全性閾値）</label>
       <div class="row">
         <select id="bv-mc-mode" style="flex:1.2;">
@@ -2788,8 +2720,25 @@ function buildBvaluePanel() {
       </div>
     </div>
   `;
-  menuContainer.appendChild(resultSection);
-  bindAccordionSection(resultSection);
+  container.appendChild(toolbar);
+
+  const summaryChip = document.getElementById('bv-summary-chip');
+  const detailPopover = document.getElementById('bv-detail-popover');
+  const toggleDetail = (force) => {
+    const open = force !== undefined ? force : !detailPopover.classList.contains('open');
+    detailPopover.classList.toggle('open', open);
+    summaryChip.classList.toggle('open', open);
+  };
+  summaryChip.addEventListener('click', () => toggleDetail());
+  summaryChip.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDetail(); }
+  });
+  // ツールバー外をタップしたら詳細ポップオーバーを閉じる
+  document.addEventListener('click', (e) => {
+    if (!detailPopover.classList.contains('open')) return;
+    if (toolbar.contains(e.target)) return;
+    toggleDetail(false);
+  });
 
   document.getElementById('bv-draw-btn').addEventListener('click', () => {
     bvalueState.drawing = !bvalueState.drawing;
@@ -2969,6 +2918,14 @@ function assessBvalueReliability(n, b) {
   return { level, label };
 }
 
+function updateBvSummaryChip(text, level = 'caution') {
+  const dot = document.getElementById('bv-summary-dot');
+  const textEl = document.getElementById('bv-summary-text');
+  if (!dot || !textEl) return;
+  dot.className = `bv-summary-dot ${level}`;
+  textEl.textContent = text;
+}
+
 function computeAndRenderBvalue() {
   computeAndRenderBvalueInner();
 }
@@ -2979,6 +2936,7 @@ function computeAndRenderBvalueInner() {
 
   if (!bvalueState.bbox) {
     resultEl.innerHTML = `<span style="color:var(--text-2);">地図上で解析対象領域を選択</span>`;
+    updateBvSummaryChip('領域未選択', 'caution');
     return;
   }
 
@@ -2987,6 +2945,7 @@ function computeAndRenderBvalueInner() {
 
   if (mags.length < 5) {
     resultEl.innerHTML = `対象地震数: ${mags.length}<br><span style="color:var(--text-2);">解析には最低5件以上必要です</span>`;
+    updateBvSummaryChip(`データ不足（n=${mags.length}）`, 'danger');
     return;
   }
 
@@ -3009,6 +2968,7 @@ function computeAndRenderBvalueInner() {
 
   if (mc == null) {
     resultEl.innerHTML = `Mcの推定に失敗しました`;
+    updateBvSummaryChip('Mc推定失敗', 'danger');
     return;
   }
 
@@ -3016,6 +2976,7 @@ function computeAndRenderBvalueInner() {
 
   if (b == null) {
     resultEl.innerHTML = `Mc以上のデータが不足しています（Mc=${mc.toFixed(1)}）`;
+    updateBvSummaryChip('データ不足', 'danger');
     return;
   }
 
@@ -3032,6 +2993,8 @@ function computeAndRenderBvalueInner() {
   const warningHtml = reliability.label
     ? `<div style="margin-top:6px; padding:6px 8px; border-radius:6px; background:rgba(255,255,255,0.04); border:1px solid ${levelColor}; color:${levelColor}; font-size:11.5px; line-height:1.5;">${reliability.label}</div>`
     : '';
+
+  updateBvSummaryChip(`b = ${b.toFixed(3)}`, reliability.level);
 
   resultEl.innerHTML = `
     <div class="font-num" style="font-size:26px; font-weight:800; color:var(--accent); font-family:var(--font-base);">
@@ -4054,7 +4017,6 @@ async function initMechView() {
   renderMechList();
 }
 
-loadEpinameData();
 loadTeichiRegions();
 initSharedMap();
 initMechView();
