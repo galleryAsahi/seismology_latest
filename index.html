@@ -2535,15 +2535,23 @@ function setupBboxDrawing() {
   let freehandPoints = null; // ドラッグ中に蓄積する [lng,lat] の配列
   let isDraggingFreehand = false;
   let pendingRafId = null;
+  let lastScreenPoint = null; // 直前に採用した点の画面座標（px間引き用）
+
+  // 蓄積点数の上限。これを超えたら間引いて半分にし、以降も一定間隔で追加され続ける
+  // ようにする。ズームレベルに関わらず点数の増加ペースを一定に保つのが目的。
+  const MAX_FREEHAND_POINTS = 150;
+  const MIN_PX_DIST = 4; // 画面上でこの距離(px)未満の移動は無視する
 
   // base-world/base-pref はGeoJSON取得後（非同期）に quake-circles の直前へ
   // moveLayer されるため、その完了タイミング次第で bv-bbox 系レイヤーより
   // 手前（上）に来てしまい、不透明なベース地図がbboxの矩形を覆い隠すことがある。
   // 描画のたびに最前面へ出し直すことで、読み込み順に依存せず常に見えるようにする。
-  function bringSelectionLayersToFront() {
+  // showFill=false（ドラッグ中のプレビュー）では半透明の塗りを出さず、
+  // 枠線のみ表示する。確定時（mouseup）にのみ塗りも表示する。
+  function bringSelectionLayersToFront(showFill = true) {
     if (sharedMap.getLayer('bv-bbox-fill')) {
       sharedMap.moveLayer('bv-bbox-fill');
-      sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'visible');
+      sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', showFill ? 'visible' : 'none');
     }
     if (sharedMap.getLayer('bv-bbox-line')) {
       sharedMap.moveLayer('bv-bbox-line');
@@ -2577,6 +2585,12 @@ function setupBboxDrawing() {
     if (!bvalueState.drawing) return;
     isDraggingFreehand = true;
     freehandPoints = [[e.lngLat.lng, e.lngLat.lat]];
+    lastScreenPoint = e.point;
+    // 新しいドラッグの開始時点で、前回選択時の半透明な塗りが一瞬見えて
+    // しまわないよう先に隠しておく（枠線は次の描画更新で改めて表示される）。
+    if (sharedMap.getLayer('bv-bbox-fill')) {
+      sharedMap.setLayoutProperty('bv-bbox-fill', 'visibility', 'none');
+    }
     sharedMap.dragPan.disable();
     e.preventDefault();
   }
@@ -2588,21 +2602,34 @@ function setupBboxDrawing() {
     pendingRafId = requestAnimationFrame(() => {
       pendingRafId = null;
       if (!freehandPoints) return;
-      const ring = freehandPoints.length > 2
-        ? [...freehandPoints, freehandPoints[0]]
+      // 描画中のプレビューも常に上限点数以下に間引いてから渡す。
+      // ドラッグ中は毎フレームここを通るため、点数が増えるほど重くなるのを防ぐ。
+      const preview = freehandPoints.length > MAX_FREEHAND_POINTS
+        ? simplifyRing(freehandPoints, MAX_FREEHAND_POINTS, false)
         : freehandPoints;
+      const ring = preview.length > 2 ? [...preview, preview[0]] : preview;
       sharedMap.getSource('bv-bbox').setData(polygonGeoJSON(ring));
-      bringSelectionLayersToFront();
+      bringSelectionLayersToFront(false);
     });
   }
 
   function onMouseMove(e) {
     if (!isDraggingFreehand || !freehandPoints) return;
-    const last = freehandPoints[freehandPoints.length - 1];
-    const next = [e.lngLat.lng, e.lngLat.lat];
-    // 直前の点とほぼ同じ位置なら間引く（点数を減らして描画・判定を軽くする）
-    if (Math.abs(next[0] - last[0]) < 1e-4 && Math.abs(next[1] - last[1]) < 1e-4) return;
-    freehandPoints.push(next);
+    // 画面ピクセル距離で間引く。地理座標(度)ベースだとズーム率次第で
+    // 間引き効果が変わってしまうため、常に一定間隔になるpx基準にする。
+    if (lastScreenPoint) {
+      const dx = e.point.x - lastScreenPoint.x;
+      const dy = e.point.y - lastScreenPoint.y;
+      if ((dx * dx + dy * dy) < MIN_PX_DIST * MIN_PX_DIST) return;
+    }
+    lastScreenPoint = e.point;
+    freehandPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    // 蓄積点数が上限を超えたら間引いて配列自体を縮小する。
+    // こうしないとドラッグを続ける限り配列が伸び続け、簡略化のコストも
+    // 描画コストも際限なく増えてしまう。
+    if (freehandPoints.length > MAX_FREEHAND_POINTS * 2) {
+      freehandPoints = simplifyRing(freehandPoints, MAX_FREEHAND_POINTS, false);
+    }
     scheduleDrawUpdate();
   }
 
@@ -2613,7 +2640,7 @@ function setupBboxDrawing() {
     if (freehandPoints.length >= 3) {
       const ring = simplifyRing([...freehandPoints, freehandPoints[0]]);
       sharedMap.getSource('bv-bbox').setData(polygonGeoJSON(ring));
-      bringSelectionLayersToFront();
+      bringSelectionLayersToFront(true);
       bvalueState.polygon = ring;
       bvalueState.bbox = ringToBbox(ring);
     } else {
@@ -2655,15 +2682,19 @@ function ringToBbox(ring) {
 // フリーハンド描画で蓄積された頂点列を間引く。
 // 一定間隔ごとに1点を残す簡易サンプリングで、判定・描画の負荷を抑える。
 // （厳密なDouglas-Peuckerではないが、フリーハンド領域選択の用途では十分）
-function simplifyRing(ring, maxPoints = 300) {
+// closeRing=true のときのみ末尾に始点を追加して輪を閉じる。ドラッグ途中の
+// 未完成パスを間引く場合は false にして、始点への不要な引き戻しを防ぐ。
+function simplifyRing(ring, maxPoints = 300, closeRing = true) {
   if (ring.length <= maxPoints) return ring;
   const step = ring.length / maxPoints;
   const simplified = [];
   for (let i = 0; i < maxPoints; i++) {
     simplified.push(ring[Math.floor(i * step)]);
   }
-  // 閉じた輪を保証（始点と終点を一致させる）
-  simplified.push(ring[0]);
+  if (closeRing) {
+    // 閉じた輪を保証（始点と終点を一致させる）
+    simplified.push(ring[0]);
+  }
   return simplified;
 }
 
